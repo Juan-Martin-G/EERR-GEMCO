@@ -498,7 +498,7 @@ def main():
 
     salida = {
         "meta": {
-            "meses_con_real": [1, 2, 3, 4, 5],  # ajustar cada vez que
+            "meses_con_real": [1, 2, 3, 4, 5, 6],  # ajustar cada vez que
                                                   # se agregue un mes nuevo
         },
         "meses_nombre": MESES_NOMBRE,
