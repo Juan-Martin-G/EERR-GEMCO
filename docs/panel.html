@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<script>
+if (sessionStorage.getItem('eerr_auth') !== 'true') {
+  window.location.href = 'index.html';
+}
+</script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EERR — GEMCO</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --az:#2c5f7c; --az2:#1e3a4e; --pos:#4a9e8c; --neg:#d97b5f;
+  --brd:#e2e4e8; --gy:#f5f7fb; --gy2:#edf0f5; --wh:#fff;
+  --txt:#1a1a2e; --mut:#6b7280; --r:6px;
+  --th1:28px; --hdr:0px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(--txt);
+     font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Header ─────────────────────────────────────────────────────── */
+#hdr{background:var(--wh);border-bottom:2px solid var(--brd);padding:0 14px;flex-shrink:0;z-index:20;position:relative}
+#nav-row{display:flex;gap:2px;padding:6px 0 0}
+.nav-btn{background:none;border:none;border-bottom:3px solid transparent;padding:7px 16px;
+  font-size:13px;font-weight:700;color:var(--mut);cursor:pointer;transition:.12s;border-radius:4px 4px 0 0}
+.nav-btn:hover{color:var(--az)}
+.nav-btn.active{color:var(--az);border-bottom-color:var(--az)}
+#sel-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:6px 0 8px}
+.sel-grp{display:flex;align-items:center;gap:6px}
+.sel-lbl{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;
+  letter-spacing:.06em;white-space:nowrap}
+.btn-grp{display:flex;gap:3px;flex-wrap:wrap}
+.sel-btn{background:var(--wh);border:1px solid var(--brd);color:var(--mut);font-size:11px;
+  font-weight:600;padding:4px 9px;border-radius:20px;cursor:pointer;transition:.12s;
+  font-family:inherit;white-space:nowrap}
+.sel-btn:hover{border-color:var(--az);color:var(--az)}
+.sel-btn.active{background:var(--az);color:#fff;border-color:var(--az)}
+
+/* ── Logout ──────────────────────────────────────────────────────── */
+#btn-logout{position:absolute;top:8px;right:14px;background:none;border:1px solid var(--brd);
+  color:var(--mut);font-size:10px;font-weight:600;padding:4px 10px;border-radius:20px;
+  cursor:pointer;transition:.12s;font-family:inherit}
+#btn-logout:hover{border-color:var(--neg);color:var(--neg)}
+
+/* ── Main content ────────────────────────────────────────────────── */
+#main{flex:1;min-height:0;overflow:hidden;position:relative}
+#view-eerr,#view-graf{height:100%}
+
+/* ── Table ───────────────────────────────────────────────────────── */
+#tbl-cont{height:100%;overflow:auto}
+#eerr-tbl{border-collapse:collapse;white-space:nowrap;font-size:12px}
+#eerr-tbl th,#eerr-tbl td{border:1px solid #d8dde4;padding:3px 8px}
+
+/* Sticky header rows */
+#eerr-tbl thead tr:first-child th{
+  position:sticky;top:0;z-index:4;
+  background:var(--az2);color:#fff;text-align:center;font-weight:700;height:var(--th1)}
+#eerr-tbl thead tr:last-child th{
+  position:sticky;top:var(--th1);z-index:4;
+  background:#2a4f6a;color:#d4e8f0;text-align:center;font-size:11px;font-weight:600}
+/* Acum cols */
+.th-acum{background:#1a3040 !important}
+.th-acum-c{background:#243848 !important}
+
+/* Sticky left column */
+.sticky-l{position:sticky;left:0;z-index:3}
+#eerr-tbl thead tr:first-child th.sticky-l{z-index:6}
+#eerr-tbl thead tr:last-child th.sticky-l{z-index:5}
+
+/* Body rows */
+.row-norm td{background:var(--wh)}
+.row-norm:hover td{background:#f0f6fa}
+.row-sub td{background:#edf1f7;font-weight:700}
+.row-sub:hover td{background:#e4eaf4}
+.row-pct td{background:#fafbfd;color:var(--mut);font-style:italic;font-size:11px}
+.row-emp td{background:#f0f4f8;font-size:11px}
+.row-emp:hover td{background:#e8eef5}
+.row-lin td{background:#f6f8fa;font-size:11px;color:var(--mut)}
+.row-lin:hover td{background:#edf2f5}
+
+/* Body sticky left cells inherit row background */
+.row-norm .sticky-l{background:var(--wh)}
+.row-norm:hover .sticky-l{background:#f0f6fa}
+.row-sub .sticky-l{background:#edf1f7}
+.row-sub:hover .sticky-l{background:#e4eaf4}
+.row-pct .sticky-l{background:#fafbfd}
+.row-emp .sticky-l{background:#f0f4f8}
+.row-emp:hover .sticky-l{background:#e8eef5}
+.row-lin .sticky-l{background:#f6f8fa}
+.row-lin:hover .sticky-l{background:#edf2f5}
+
+/* Concepto cells */
+.td-c{text-align:left;min-width:210px;max-width:280px;white-space:normal}
+.conc-n0{padding-left:8px}
+.conc-n1{padding-left:26px}
+.conc-emp{padding-left:32px}
+.conc-lin{padding-left:50px;font-size:11px}
+
+/* Value cells */
+.td-v{text-align:right;min-width:88px}
+.td-acum{border-left:2px solid var(--az) !important}
+
+/* Drill-down button */
+.dd-btn{display:inline-flex;align-items:center;justify-content:center;
+  width:15px;height:15px;border:1px solid var(--az);color:var(--az);
+  background:none;font-size:10px;font-weight:700;border-radius:3px;
+  cursor:pointer;margin-right:4px;vertical-align:middle;flex-shrink:0;
+  line-height:1;padding:0;font-family:inherit}
+.dd-btn:hover{background:var(--az);color:#fff}
+.dd-sp{display:inline-block;width:19px}
+
+/* ── Graficos ─────────────────────────────────────────────────────── */
+#view-graf{overflow-y:auto}
+.g-wrap{padding:12px 14px 24px}
+.g-card{background:var(--wh);border:1px solid var(--brd);border-radius:var(--r);
+  margin-bottom:14px;overflow:hidden}
+.g-ch{padding:9px 13px;border-bottom:1px solid var(--brd);background:var(--gy);
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.g-ct{font-size:10px;font-weight:700;color:#4a5568;text-transform:uppercase;letter-spacing:.06em}
+.g-cb{padding:13px}
+.ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.lbl{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.bg{display:flex;gap:3px;flex-wrap:wrap}
+.gb{background:var(--wh);border:1px solid #d0d5dd;color:#555;font-size:11px;font-weight:600;
+  padding:4px 9px;border-radius:20px;cursor:pointer;transition:.12s;font-family:inherit}
+.gb:hover{border-color:var(--az);color:var(--az)}
+.gb.on{background:var(--az);color:#fff;border-color:var(--az)}
+.sl{border:1px solid #d0d5dd;border-radius:5px;padding:4px 7px;font-size:11px;
+  font-family:inherit;color:#444;background:var(--wh);cursor:pointer;outline:none}
+.sl:focus{border-color:var(--az)}
+.g3{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.g-wrap2{position:relative}
+
+/* ── Loading ──────────────────────────────────────────────────────── */
+#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100vh;gap:12px;color:var(--mut);font-size:15px}
+#app{display:none;flex-direction:column;flex:1;min-height:0}
+</style>
+</head>
+<body>
+
+<div id="loading"><div>Cargando datos…</div></div>
+
+<div id="app">
+
+  <!-- ── HEADER ─────────────────────────────────────────────────── -->
+  <div id="hdr">
+    <button id="btn-logout" onclick="logout()">Cerrar sesión</button>
+    <div id="nav-row">
+      <button class="nav-btn active" data-hoja="eerr" onclick="setHoja('eerr')">📊 EERR</button>
+      <button class="nav-btn" data-hoja="graficos" onclick="setHoja('graficos')">📈 Gráficos</button>
+    </div>
+    <div id="sel-row">
+      <div class="sel-grp">
+        <span class="sel-lbl">Mes</span>
+        <div class="btn-grp" id="sel-meses"></div>
+      </div>
+      <div class="sel-grp">
+        <span class="sel-lbl">Empresa</span>
+        <div class="btn-grp" id="sel-empresa"></div>
+      </div>
+      <div class="sel-grp" id="sel-eerr-ctrl">
+        <span class="sel-lbl">Variación</span>
+        <button class="sel-btn" id="btn-vard" onclick="toggleVarD()">Var $</button>
+        <button class="sel-btn" id="btn-varpct" onclick="toggleVarPct()">Var %</button>
+        <span class="sel-lbl">Escala</span>
+        <button class="sel-btn" id="btn-mm" onclick="toggleMM()">MM$</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MAIN CONTENT ───────────────────────────────────────────── -->
+  <div id="main">
+
+    <!-- EERR VIEW -->
+    <div id="view-eerr">
+      <div id="tbl-cont">
+        <table id="eerr-tbl">
+          <thead id="eerr-thead"></thead>
+          <tbody id="eerr-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- GRAFICOS VIEW -->
+    <div id="view-graf" style="display:none">
+      <div class="g-wrap">
+
+        <!-- Card 1: Principal -->
+        <div class="g-card">
+          <div class="g-ch">
+            <span class="g-ct">Real vs Presupuesto</span>
+            <select class="sl" id="g-conc" style="min-width:185px"></select>
+          </div>
+          <div class="g-cb">
+            <div class="ctrl">
+              <span class="lbl">Vista</span>
+              <div class="bg">
+                <button class="gb on" data-v2="bar"  onclick="setV2(this)">Barras</button>
+                <button class="gb"    data-v2="line" onclick="setV2(this)">Líneas</button>
+                <button class="gb"    data-v2="acum" onclick="setV2(this)">Acumulado</button>
+              </div>
+              <span class="lbl">Series</span>
+              <div class="bg">
+                <button class="gb on" id="g-r-btn" onclick="toggleGReal(this)">Real</button>
+                <button class="gb on" id="g-p-btn" onclick="toggleGPpto(this)">Ppto</button>
+              </div>
+              <span class="lbl">Detalle</span>
+              <div class="bg">
+                <button class="gb" id="btn-linea" onclick="toggleGLinea(this)">Por Línea</button>
+              </div>
+            </div>
+            <div class="g-wrap2" style="height:340px"><canvas id="g-cM"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Cards 2-4 grid -->
+        <div class="g3">
+          <div class="g-card">
+            <div class="g-ch">
+              <span class="g-ct">Cascada EBITDA</span>
+              <span id="g-wf-titulo" style="font-size:10px;font-weight:600;color:#6b7280;margin-left:2px"></span>
+            </div>
+            <div class="g-cb" style="padding:10px">
+              <div class="g-wrap2" style="height:300px"><canvas id="g-cW"></canvas></div>
+            </div>
+          </div>
+          <div class="g-card">
+            <div class="g-ch">
+              <span class="g-ct">Composición Empresa</span>
+              <select class="sl" id="g-d-conc" onchange="buildGD()" style="font-size:10px;max-width:130px"></select>
+            </div>
+            <div class="g-cb" style="padding:10px">
+              <div class="g-wrap2" style="height:300px"><canvas id="g-cD"></canvas></div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /.g-wrap -->
+    </div><!-- /#view-graf -->
+
+  </div><!-- /#main -->
+</div><!-- /#app -->
+
+<script src="app.js"></script>
+<script>
+function logout() {
+  sessionStorage.removeItem('eerr_auth');
+  sessionStorage.removeItem('eerr_auth_email');
+  window.location.href = 'index.html';
+}
+</script>
+</body>
+</html>

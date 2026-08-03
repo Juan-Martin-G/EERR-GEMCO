@@ -1,0 +1,13 @@
+# Datos fuente sensibles - NO subir (contienen detalle transaccional)
+data/raw/*.xlsx
+data/raw/*.xls
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Sistema
+.DS_Store
+Thumbs.db
