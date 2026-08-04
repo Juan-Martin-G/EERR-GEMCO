@@ -13,6 +13,8 @@ Reglas clave (documentadas durante validación celda a celda):
 - Cuentas alfanuméricas (ej: "0005P") → se tratan como código -1 (sin mapeo).
 """
 
+import re
+
 import pandas as pd
 from pathlib import Path
 
@@ -35,10 +37,20 @@ def _to_int_cuenta(valor) -> int:
 
 
 def _normalizar_eerr(nombre: str) -> str:
-    """Quita sufijos ' Directos' e ' Indirectos' del nombre EERR."""
+    """
+    Colapsa espacios multiples/inconsistentes a uno solo (ej. 'los  empleados'
+    con doble espacio -> 'los empleados') ANTES de quitar los sufijos
+    ' Directos'/' Indirectos', para que la normalizacion funcione sin
+    importar donde caiga el espacio extra. Esto evita que una variacion
+    de formato en el Excel fuente (comun cuando alguien edita manualmente
+    una celda) rompa silenciosamente la comparacion exacta de texto usada
+    en calculo/eerr.py.
+    """
     if pd.isna(nombre):
         return "Sin clasificar"
-    return str(nombre).replace(" Directos", "").replace(" Indirectos", "").strip()
+    texto = re.sub(r"\s+", " ", str(nombre)).strip()
+    texto = texto.replace(" Directos", "").replace(" Indirectos", "").strip()
+    return texto
 
 
 def _aplicar_prioridad_mapeo(codigo_cuenta: int, nombre_eerr_nativo: str,
