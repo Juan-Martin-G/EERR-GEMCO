@@ -16,6 +16,18 @@ const ABR = {
 const CR = '#2c5f7c', CP = '#7fb3c8', CPs = '#4a9e8c', CN = '#d97b5f';
 const CE = {GEMCO:'#2c5f7c', Incardia:'#4a9e8c', MMQ:'#8c6a2c', Tecservice:'#7f8c9c'};
 
+// Nombres completos (sin siglas) para las etiquetas de los gráficos.
+// Mismo mapeo que NOMBRES_LARGOS en app/main.py.
+const NOMBRES_LARGOS = {
+  'GPBE Directos':   'Gastos por Beneficios a los Empleados Directos',
+  'GPBE Indirectos': 'Gastos por Beneficios a los Empleados Indirectos',
+  'GPBE Total':      'Gastos por Beneficios a los Empleados Total',
+  'OGPN Directos':   'Otros Gastos por Naturaleza Directos',
+  'OGPN Indirectos': 'Otros Gastos por Naturaleza Indirectos',
+  'OGPN Total':      'Otros Gastos por Naturaleza Total',
+};
+function nombreLargo(c) { return NOMBRES_LARGOS[c] || c; }
+
 // ═══════════════════════════════════════════════════════════════════
 //  ESTADO GLOBAL
 // ═══════════════════════════════════════════════════════════════════
@@ -32,7 +44,7 @@ let exEmp  = {};
 let cM=null, cW=null, cD=null;
 
 // Estado gráficos
-let gVista = 'bar', gReal = true, gPpto = true, gPorLinea = false;
+let gVista = 'bar', gReal = true, gPpto = true;
 
 // ═══════════════════════════════════════════════════════════════════
 //  FETCH Y ARRANQUE
@@ -460,14 +472,15 @@ function handleDrill(e) {
 //  GRÁFICOS — CONTROLES
 // ═══════════════════════════════════════════════════════════════════
 function initGrafControls() {
-  // Select concepto principal
+  // Select concepto principal (value = key corta para DATA, texto = nombre completo)
   const sc = document.getElementById('g-conc');
   DATA.estructura_eerr.forEach(([c]) => {
     const o = document.createElement('option');
-    o.value = o.textContent = c;
+    o.value = c;
+    o.textContent = nombreLargo(c);
     sc.appendChild(o);
   });
-  sc.addEventListener('change', () => { updateLineaBtn(); buildGMain(); });
+  sc.addEventListener('change', () => buildGMain());
 
   // Composición concepto
   const dc = document.getElementById('g-d-conc');
@@ -475,7 +488,8 @@ function initGrafControls() {
     .filter(([c]) => !FILAS_PCT.has(c))
     .forEach(([c]) => {
       const o = document.createElement('option');
-      o.value = o.textContent = c;
+      o.value = c;
+      o.textContent = nombreLargo(c);
       dc.appendChild(o);
     });
 }
@@ -484,7 +498,6 @@ function initGrafControls() {
 //  GRÁFICOS — RENDER
 // ═══════════════════════════════════════════════════════════════════
 function renderGraf() {
-  updateLineaBtn();
   buildGMain();
   buildGWF();
   buildGD();
@@ -500,80 +513,15 @@ function setV2(btn) {
 function toggleGReal(btn) { gReal = !gReal; btn.classList.toggle('on', gReal); buildGMain(); }
 function toggleGPpto(btn) { gPpto = !gPpto; btn.classList.toggle('on', gPpto); buildGMain(); }
 
-function toggleGLinea(btn) {
-  const conc = document.getElementById('g-conc').value;
-  if (!DATA.conceptos_con_drilldown.includes(conc)) return;
-  gPorLinea = !gPorLinea;
-  btn.classList.toggle('on', gPorLinea);
-  buildGMain();
-}
-
-function updateLineaBtn() {
-  const btn = document.getElementById('btn-linea');
-  if (!btn) return;
-  const conc     = document.getElementById('g-conc').value;
-  const hasDrill = DATA.conceptos_con_drilldown.includes(conc);
-  btn.disabled      = !hasDrill;
-  btn.style.opacity = hasDrill ? '' : '0.35';
-  btn.style.cursor  = hasDrill ? '' : 'default';
-  if (!hasDrill && gPorLinea) {
-    gPorLinea = false;
-    btn.classList.remove('on');
-  }
-}
-
 // ──────────────────────────────────────────────────────────────────
 //  Chart 1: Real vs Presupuesto
 // ──────────────────────────────────────────────────────────────────
 function buildGMain() {
-  const conc     = document.getElementById('g-conc').value;
-  const isPct    = FILAS_PCT.has(conc);
-  const hasDrill = DATA.conceptos_con_drilldown.includes(conc);
-  const meses    = mOrd();
+  const conc  = document.getElementById('g-conc').value;
+  const isPct = FILAS_PCT.has(conc);
+  const meses = mOrd();
 
-  // ── Modo Por Línea de Negocio ───────────────────────────────────
-  if (gPorLinea && hasDrill) {
-    const emps = empsList();
-    const acumR = {}, acumP = {};
-    emps.forEach(e => {
-      meses.forEach(m => {
-        const lR = lineaBlockR(conc, e, m);
-        Object.entries(lR).forEach(([l, v]) => { acumR[l] = (acumR[l] || 0) + v; });
-        const lP = DATA.drilldown_linea_ppto[conc]?.[e]?.[m+''] || {};
-        Object.entries(lP).forEach(([l, v]) => { acumP[l] = (acumP[l] || 0) + v; });
-      });
-    });
-
-    const ents   = Object.entries(acumR).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-    const labels = ents.map(([l]) => l.length > 32 ? l.slice(0, 31) + '…' : l);
-    const vR     = ents.map(([l]) => acumR[l] ?? 0);
-    const vP     = ents.map(([l]) => acumP[l] ?? 0);
-
-    const ds = [];
-    if (gReal) ds.push({ label:'Real',         data:vR, backgroundColor:CR, borderRadius:3 });
-    if (gPpto) ds.push({ label:'Presupuesto',   data:vP, backgroundColor:CP, borderRadius:3 });
-
-    if (cM) cM.destroy();
-    cM = new Chart(document.getElementById('g-cM'), {
-      type: 'bar',
-      data: { labels, datasets: ds },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
-          tooltip: { callbacks: { label: ctx => ' ' + ctx.dataset.label + ': ' + fmm(ctx.raw) } }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 30 } },
-          y: { grid: { color: '#edf0f7' }, ticks: { callback: fmtMM, font: { size: 11 } } }
-        }
-      }
-    });
-    return;
-  }
-
-  // ── Modo Normal (meses seleccionados + Acumulado al final) ──────
+  // Meses seleccionados + Acumulado al final
   const isLine = (gVista !== 'bar');
   let ra, pa;
   if (isPct) {
@@ -663,9 +611,25 @@ function buildGMain() {
 // ──────────────────────────────────────────────────────────────────
 //  Chart 2: Cascada EBITDA (usa empresa compartida)
 // ──────────────────────────────────────────────────────────────────
-const WF_CONCEPTOS = ['Ingresos','Costo de ventas','Margen Bruto','Subtotal GAV','EBITDA Directo','Gastos Adicionales','EBITDA Empresa'];
-const WF_LABELS    = ['Ingresos','Costo VTA','Marg. Bruto','Subt. GAV','EBITDA Dir.','Gs. Adic.','EBITDA Emp.'];
-const WF_ES_TOTAL  = [false, false, true, false, true, false, true];
+// GAV se separa en sus 2 componentes (GPBE y OGPN) como barras flotantes
+// individuales entre Margen Bruto y EBITDA Directo.
+const WF_CONCEPTOS = ['Ingresos','Costo de ventas','Margen Bruto','GPBE Total','OGPN Total','EBITDA Directo','Gastos Adicionales','EBITDA Empresa'];
+const WF_LABELS    = WF_CONCEPTOS.map(nombreLargo); // nombres completos, sin abreviar
+const WF_ES_TOTAL  = [false, false, true, false, false, true, false, true];
+
+// Parte una etiqueta larga en varias líneas (por palabra) para que el
+// eje X de un gráfico angosto la muestre completa, sin abreviarla.
+function wrapLabel(s, maxLen = 16) {
+  const words = s.split(' ');
+  const lines = [];
+  let cur = '';
+  words.forEach(w => {
+    if ((cur + ' ' + w).trim().length > maxLen && cur) { lines.push(cur); cur = w; }
+    else cur = (cur + ' ' + w).trim();
+  });
+  if (cur) lines.push(cur);
+  return lines;
+}
 
 function buildGWF() {
   const meses = mOrd();
@@ -714,7 +678,10 @@ function buildGWF() {
         }}
       },
       scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 25 } },
+        x: { grid: { display: false }, ticks: {
+          font: { size: 9 }, maxRotation: 0, minRotation: 0, autoSkip: false,
+          callback: (val, idx) => wrapLabel(WF_LABELS[idx])
+        } },
         y: { grid: { color: '#edf0f7' }, ticks: { callback: fmtMM, font: { size: 10 } } }
       }
     }
