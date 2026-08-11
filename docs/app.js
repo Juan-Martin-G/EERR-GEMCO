@@ -387,7 +387,7 @@ function buildMainRow(c, nv, tip, isPct, hasDrill, isExp, meses, tp, ta) {
     ? `<button class="dd-btn" data-c="${esc(c)}" data-n="1">${isExp ? '−' : '+'}</button>`
     : '<span class="dd-sp"></span>';
   let row = `<tr class="${rcls}">`;
-  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(c)}</td>`;
+  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(nombreLargo(c))}</td>`;
   meses.forEach(m => { tp.forEach(t => { row += `<td class="td-v">${cellV(c, m, t, isPct)}</td>`; }); });
   ta.forEach(t => { row += `<td class="td-v td-acum">${cellAcum(c, t, isPct)}</td>`; });
   return row + '</tr>';
