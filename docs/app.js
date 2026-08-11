@@ -28,6 +28,17 @@ const NOMBRES_LARGOS = {
 };
 function nombreLargo(c) { return NOMBRES_LARGOS[c] || c; }
 
+// Ratios Costo/Ingresos de la hoja "Ratios". Cada uno se calcula como
+// ABS(suma de conceptosCosto) / ABS(Ingresos) * 100.
+const RATIOS = [
+  { key: 'costo_ventas',  label: 'Costo de Ventas',               conceptos: ['Costo de ventas'] },
+  { key: 'gpbe',          label: 'Gasto x Beneficios Empleados',  conceptos: ['GPBE Total'] },
+  { key: 'ogpn',          label: 'Otros Gastos por Naturaleza',   conceptos: ['OGPN Total'] },
+  { key: 'gav_indirecto', label: 'GAV Indirecto',                 conceptos: ['GPBE Indirectos', 'OGPN Indirectos'] },
+  { key: 'gav_total',     label: 'GAV Totales',                   conceptos: ['Subtotal GAV'] },
+  { key: 'costo_total',   label: 'Costo Total',                   conceptos: ['Costo de ventas', 'Subtotal GAV'] },
+];
+
 // ═══════════════════════════════════════════════════════════════════
 //  ESTADO GLOBAL
 // ═══════════════════════════════════════════════════════════════════
@@ -45,6 +56,10 @@ let cM=null, cW=null, cD=null;
 
 // Estado gráficos
 let gVista = 'bar', gReal = true, gPpto = true;
+
+// Estado ratios
+let rtCosto = RATIOS[0].key;
+let cRatio  = null;
 
 // ═══════════════════════════════════════════════════════════════════
 //  FETCH Y ARRANQUE
@@ -71,6 +86,7 @@ function init() {
   document.getElementById('eerr-tbody').addEventListener('click', handleDrill);
   renderTable();
   initGrafControls();
+  initRatiosControls();
   setHoja('eerr');
 }
 
@@ -83,8 +99,10 @@ function setHoja(h) {
     b.classList.toggle('active', b.dataset.hoja === h));
   document.getElementById('view-eerr').style.display     = h === 'eerr'     ? '' : 'none';
   document.getElementById('view-graf').style.display     = h === 'graficos' ? '' : 'none';
+  document.getElementById('view-ratios').style.display   = h === 'ratios'   ? '' : 'none';
   document.getElementById('sel-eerr-ctrl').style.display = h === 'eerr'     ? '' : 'none';
   if (h === 'graficos') renderGraf();
+  if (h === 'ratios')   renderRatios();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -104,6 +122,7 @@ function buildMesesBtns() {
         x.classList.toggle('active', mesesA.has(+x.dataset.mes)));
       renderTable();
       if (hojaA === 'graficos') renderGraf();
+      if (hojaA === 'ratios')   renderRatios();
     };
     c.appendChild(b);
   }
@@ -145,6 +164,7 @@ function clickEmpresa(e) {
   exConc.clear(); exEmp = {};
   renderTable();
   if (hojaA === 'graficos') renderGraf();
+  if (hojaA === 'ratios')   renderRatios();
 }
 
 function toggleVarD() {
@@ -716,6 +736,176 @@ function buildGD() {
       }
     }
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RATIOS — CÁLCULO (Costo / Ingresos, respeta empresa/MMQ vía gR/gP)
+// ═══════════════════════════════════════════════════════════════════
+function costoR(m, ratio) { return ratio.conceptos.reduce((s, c) => s + (gR(m, c) ?? 0), 0); }
+function costoP(m, ratio) { return ratio.conceptos.reduce((s, c) => s + (gP(m, c) ?? 0), 0); }
+
+function ratioPct(costo, ingresos) {
+  if (ingresos == null || ingresos === 0) return null;
+  return Math.abs(costo) / Math.abs(ingresos) * 100;
+}
+
+function ratioMesR(m, ratio) { return ratioPct(costoR(m, ratio), gR(m, 'Ingresos')); }
+function ratioMesP(m, ratio) { return ratioPct(costoP(m, ratio), gP(m, 'Ingresos')); }
+
+// Acumulado = costo acumulado / ingreso acumulado (NO promedio de % mensuales)
+function ratioAcumR(ratio) {
+  const costo = [...mesesA].reduce((s, m) => s + costoR(m, ratio), 0);
+  return ratioPct(costo, aR('Ingresos'));
+}
+function ratioAcumP(ratio) {
+  const costo = [...mesesA].reduce((s, m) => s + costoP(m, ratio), 0);
+  return ratioPct(costo, aP('Ingresos'));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RATIOS — FORMATO Y COLOR
+// ═══════════════════════════════════════════════════════════════════
+function fmtRatio(v) { return v == null ? '-' : v.toFixed(1).replace('.', ',') + '%'; }
+function fmtVarPP(r, p) {
+  if (r == null || p == null) return '-';
+  const d = r - p;
+  return (d < 0 ? '-' : '+') + Math.abs(d).toFixed(1).replace('.', ',') + ' pp';
+}
+// Semáforo por magnitud del ratio: >=90% rojo, 70-90% ámbar, <70% verde.
+function rtCellClass(v) {
+  if (v == null) return '';
+  if (v >= 90) return 'rt-hi';
+  if (v >= 70) return 'rt-mid';
+  return 'rt-lo';
+}
+// VAR: positivo (costo real relativamente mayor al presupuestado) = desfavorable.
+function rtVarClass(r, p) {
+  if (r == null || p == null) return '';
+  const d = r - p;
+  if (d > 0) return 'rt-var-bad';
+  if (d < 0) return 'rt-var-good';
+  return '';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RATIOS — CONTROLES
+// ═══════════════════════════════════════════════════════════════════
+function initRatiosControls() {
+  const cont = document.getElementById('rt-sel-costo');
+  RATIOS.forEach(r => {
+    const b = document.createElement('button');
+    b.className = 'gb' + (r.key === rtCosto ? ' on' : '');
+    b.textContent = r.label;
+    b.dataset.key = r.key;
+    b.onclick = () => selectRatio(r.key);
+    cont.appendChild(b);
+  });
+}
+
+function selectRatio(key) {
+  rtCosto = key;
+  document.querySelectorAll('#rt-sel-costo .gb').forEach(b =>
+    b.classList.toggle('on', b.dataset.key === key));
+  renderRatios();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RATIOS — MATRIZ (tabla)
+// ═══════════════════════════════════════════════════════════════════
+function rtBuildHead(meses) {
+  let h1 = `<tr><th class="th-conc sticky-l" rowspan="2">Indicador</th>`;
+  meses.forEach(m => { h1 += `<th class="th-mes" colspan="3">${ABR[m]}</th>`; });
+  h1 += `<th class="th-acum" colspan="3">Total</th></tr>`;
+  let h2 = '<tr>';
+  meses.forEach(() => { ['Real', 'Ppto', 'Var'].forEach(t => { h2 += `<th>${t}</th>`; }); });
+  ['Real', 'Ppto', 'Var'].forEach(t => { h2 += `<th class="th-acum-c">${t}</th>`; });
+  h2 += '</tr>';
+  document.getElementById('rt-thead').innerHTML = h1 + h2;
+}
+
+function rtBuildRow(ratio, meses) {
+  const active = ratio.key === rtCosto;
+  let row = `<tr class="${active ? 'rt-row-active' : ''}">`;
+  row += `<td class="td-c sticky-l">${esc(ratio.label)}</td>`;
+  meses.forEach(m => {
+    const r = ratioMesR(m, ratio), p = ratioMesP(m, ratio);
+    row += `<td class="td-v ${rtCellClass(r)}">${fmtRatio(r)}</td>`;
+    row += `<td class="td-v ${rtCellClass(p)}">${fmtRatio(p)}</td>`;
+    row += `<td class="td-v ${rtVarClass(r, p)}">${fmtVarPP(r, p)}</td>`;
+  });
+  const rAc = ratioAcumR(ratio), pAc = ratioAcumP(ratio);
+  row += `<td class="td-v td-acum ${rtCellClass(rAc)}">${fmtRatio(rAc)}</td>`;
+  row += `<td class="td-v td-acum ${rtCellClass(pAc)}">${fmtRatio(pAc)}</td>`;
+  row += `<td class="td-v td-acum ${rtVarClass(rAc, pAc)}">${fmtVarPP(rAc, pAc)}</td>`;
+  return row + '</tr>';
+}
+
+function rtRenderBody(meses) {
+  document.getElementById('rt-tbody').innerHTML = RATIOS.map(r => rtBuildRow(r, meses)).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RATIOS — GRÁFICO COMBINADO (barras Ingresos/Costo + línea Ratio)
+// ═══════════════════════════════════════════════════════════════════
+function buildRatioChart(meses) {
+  const ratio = RATIOS.find(r => r.key === rtCosto);
+  const labels = meses.map(m => ABR[m]);
+  // Magnitud absoluta para comparar visualmente Ingresos vs Costo (mismo
+  // criterio que el ratio, que también usa ABS() de ambos).
+  const ingR   = meses.map(m => { const v = gR(m, 'Ingresos'); return v == null ? null : Math.abs(v); });
+  const costR  = meses.map(m => Math.abs(costoR(m, ratio)));
+  const ratR   = meses.map(m => ratioMesR(m, ratio));
+  const ratP   = meses.map(m => ratioMesP(m, ratio));
+
+  const titEl = document.getElementById('rt-graf-titulo');
+  if (titEl) titEl.textContent = `Ingresos vs ${ratio.label} · ${empLabel()}`;
+
+  const ds = [
+    { type: 'bar', label: 'Ingresos', data: ingR, backgroundColor: CR,
+      yAxisID: 'y', borderRadius: 4, order: 3 },
+    { type: 'bar', label: ratio.label, data: costR, backgroundColor: '#a8452a',
+      yAxisID: 'y', borderRadius: 4, order: 3 },
+    { type: 'line', label: 'Ratio Real', data: ratR, yAxisID: 'y1',
+      borderColor: '#c9902e', backgroundColor: '#c9902e', borderWidth: 2,
+      tension: .3, pointRadius: 3, spanGaps: true, order: 1 },
+    { type: 'line', label: 'Ratio Ppto', data: ratP, yAxisID: 'y1',
+      borderColor: '#c9902e', backgroundColor: '#c9902e', borderWidth: 2,
+      borderDash: [5, 5], tension: .3, pointRadius: 3, spanGaps: true, order: 2 },
+  ];
+
+  if (cRatio) cRatio.destroy();
+  cRatio = new Chart(document.getElementById('rt-chart'), {
+    data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
+        tooltip: { callbacks: { label: ctx => {
+          const v = ctx.raw;
+          if (v == null) return null;
+          if (ctx.dataset.yAxisID === 'y1') return ' ' + ctx.dataset.label + ': ' + v.toFixed(1).replace('.', ',') + '%';
+          return ' ' + ctx.dataset.label + ': ' + fmm(v);
+        } } }
+      },
+      scales: {
+        x:  { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y:  { position: 'left', grid: { color: '#edf0f7' }, ticks: { callback: fmtMM, font: { size: 11 } } },
+        y1: { position: 'right', grid: { display: false },
+              ticks: { callback: v => v.toFixed(0) + '%', font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RATIOS — RENDER
+// ═══════════════════════════════════════════════════════════════════
+function renderRatios() {
+  const meses = mOrd();
+  rtBuildHead(meses);
+  rtRenderBody(meses);
+  buildRatioChart(meses);
 }
 
 // ═══════════════════════════════════════════════════════════════════

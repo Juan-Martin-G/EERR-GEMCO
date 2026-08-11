@@ -136,6 +136,25 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 .g3{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
 .g-wrap2{position:relative}
 
+/* ── Ratios ─────────────────────────────────────────────────────── */
+#view-ratios{overflow-y:auto}
+.rt-wrap{padding:12px 14px 24px}
+.rt-ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:13px}
+.gb:disabled{cursor:default;opacity:1}
+.rt-tbl-cont{overflow-x:auto;padding:0 13px 13px}
+#rt-tbl{border-collapse:collapse;white-space:nowrap;font-size:12px;width:100%}
+#rt-tbl th,#rt-tbl td{border:1px solid #d8dde4;padding:5px 10px}
+#rt-tbl thead tr:first-child th{background:var(--az2);color:#fff;text-align:center;font-weight:700;height:28px}
+#rt-tbl thead tr:last-child th{background:#2a4f6a;color:#d4e8f0;text-align:center;font-size:11px;font-weight:600}
+#rt-tbl .td-c{min-width:230px}
+.rt-row-active td.td-c{background:#dbe8ef !important;font-weight:700;border-left:3px solid var(--az)}
+.rt-row-active td:not(.td-c){font-weight:700}
+.rt-hi{background:#fbe3dc;color:#a8452a}
+.rt-mid{background:#fbeed9;color:#8a5a1f}
+.rt-lo{background:#e2f2ee;color:#1f7a63}
+.rt-var-bad{color:#c0432a;font-weight:700}
+.rt-var-good{color:#2f8a72;font-weight:700}
+
 /* ── Loading ──────────────────────────────────────────────────────── */
 #loading{display:flex;flex-direction:column;align-items:center;justify-content:center;
   height:100vh;gap:12px;color:var(--mut);font-size:15px}
@@ -154,6 +173,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
     <div id="nav-row">
       <button class="nav-btn active" data-hoja="eerr" onclick="setHoja('eerr')">📊 EERR</button>
       <button class="nav-btn" data-hoja="graficos" onclick="setHoja('graficos')">📈 Gráficos</button>
+      <button class="nav-btn" data-hoja="ratios" onclick="setHoja('ratios')">📐 Ratios</button>
     </div>
     <div id="sel-row">
       <div class="sel-grp">
@@ -241,6 +261,39 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 
       </div><!-- /.g-wrap -->
     </div><!-- /#view-graf -->
+
+    <!-- RATIOS VIEW -->
+    <div id="view-ratios" style="display:none">
+      <div class="rt-wrap">
+
+        <div class="g-card">
+          <div class="rt-ctrl">
+            <span class="lbl">Ingreso Base</span>
+            <div class="bg"><button class="gb on" disabled>Ingresos</button></div>
+            <span class="lbl">Costo a Comparar</span>
+            <div class="bg" id="rt-sel-costo"></div>
+          </div>
+        </div>
+
+        <div class="g-card">
+          <div class="g-ch"><span class="g-ct">Matriz de Ratios (Costo / Ingresos)</span></div>
+          <div class="rt-tbl-cont">
+            <table id="rt-tbl">
+              <thead id="rt-thead"></thead>
+              <tbody id="rt-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="g-card">
+          <div class="g-ch"><span class="g-ct" id="rt-graf-titulo">Ingresos vs Costo</span></div>
+          <div class="g-cb">
+            <div class="g-wrap2" style="height:340px"><canvas id="rt-chart"></canvas></div>
+          </div>
+        </div>
+
+      </div><!-- /.rt-wrap -->
+    </div><!-- /#view-ratios -->
 
   </div><!-- /#main -->
 </div><!-- /#app -->
