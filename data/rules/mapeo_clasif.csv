@@ -47,6 +47,7 @@ cuenta,nombre_eerr
 610203,Otros gastos por naturaleza
 610204,Otros gastos por naturaleza
 610205,Otros gastos por naturaleza
+610302,Otros gastos por naturaleza
 610303,Otros gastos por naturaleza
 610306,Otros gastos por naturaleza
 610307,Otros gastos por naturaleza
@@ -113,7 +114,7 @@ cuenta,nombre_eerr
 810301,Diferencia de cambio
 810305,Diferencia de cambio
 810310,Diferencia de cambio
-810312,Otros gastos por función
+810312,Diferencia de cambio
 810401,Impuesto a la renta
 810402,Impuesto a la renta
 810403,Impuesto a la renta

@@ -157,10 +157,18 @@ function toggleMM() {
 function fI(n) {
   return Math.abs(Math.round(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
 }
+// Formatea un valor ya en millones con 1 decimal y separador de miles en
+// la parte entera (convención chilena: punto de miles, coma decimal).
+// Ej: 1234.56 -> "1.234,6"
+function fMM1(nAbsMillones) {
+  const [intPart, decPart] = nAbsMillones.toFixed(1).split('.');
+  const intFmt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${intFmt},${decPart}`;
+}
 function fmt(v, mm) {
   if (v == null || isNaN(v)) return '-';
   if (mm) {
-    const s = (Math.abs(v) / 1e6).toFixed(1).replace('.', ',');
+    const s = fMM1(Math.abs(v) / 1e6);
     return v < 0 ? `(${s})` : s;
   }
   return v < 0 ? `(${fI(v)})` : fI(v);
@@ -173,7 +181,7 @@ function fmtVD(r, p, mm) {
   if (r == null || p == null) return '-';
   const d = r - p;
   if (mm) {
-    const s = (Math.abs(d) / 1e6).toFixed(1).replace('.', ',');
+    const s = fMM1(Math.abs(d) / 1e6);
     return d < 0 ? `(${s})` : `+${s}`;
   }
   return d < 0 ? `(${fI(d)})` : `+${fI(d)}`;
@@ -222,7 +230,7 @@ function mmqSolo() {
 // ═══════════════════════════════════════════════════════════════════
 function mOrd()   { return [1,2,3,4,5,6,7,8,9,10,11,12].filter(m => mesesA.has(m)); }
 function tipos()  { return ['Real','Ppto',...(varD?['Var $']:[]),...(varPct?['Var %']:[])]; }
-function tiposA() { return ['Real','Ppto',...(varD?['Var $']:[])]; }
+function tiposA() { return ['Real','Ppto','Ppto Anual',...(varD?['Var $']:[])]; }
 
 // Nivel 0: valor de concepto para el alcance activo (Consolidado o suma de empresas)
 function gR(m, c) {
@@ -246,6 +254,13 @@ function gP(m, c) {
 }
 function aR(c) { return [...mesesA].reduce((s, m) => s + (gR(m, c) ?? 0), 0); }
 function aP(c) { return [...mesesA].reduce((s, m) => s + (gP(m, c) ?? 0), 0); }
+// Ppto acumulado SIEMPRE de los 12 meses del año, sin importar la
+// selección de meses del segmentador (columna "Ppto Anual").
+function aPAnual(c) {
+  let total = 0;
+  for (let m = 1; m <= 12; m++) total += (gP(m, c) ?? 0);
+  return total;
+}
 
 // Nivel 1: drill-down empresa individual (siempre datos de empresa específica)
 // MMQ solo (única empresa activa en el selector) usa el bloque 100% en vez
@@ -257,6 +272,11 @@ function deR(m, c, e) {
 function deP(m, c, e) { return DATA.drilldown_empresa_ppto[c]?.[m+'']?.[e] ?? null; }
 function aeR(c, e)    { return [...mesesA].reduce((s, m) => s + (deR(m, c, e) ?? 0), 0); }
 function aeP(c, e)    { return [...mesesA].reduce((s, m) => s + (deP(m, c, e) ?? 0), 0); }
+function aeAnualP(c, e) {
+  let total = 0;
+  for (let m = 1; m <= 12; m++) total += (deP(m, c, e) ?? 0);
+  return total;
+}
 
 // Nivel 2: drill-down línea (mismo criterio MMQ solo que deR)
 function lineaBlockR(c, e, m) {
@@ -267,6 +287,11 @@ function dlR(m, c, e, l) { return lineaBlockR(c, e, m)[l] ?? null; }
 function dlP(m, c, e, l) { return DATA.drilldown_linea_ppto[c]?.[e]?.[m+'']?.[l] ?? null; }
 function alR(c, e, l)    { return [...mesesA].reduce((s, m) => s + (dlR(m, c, e, l) ?? 0), 0); }
 function alP(c, e, l)    { return [...mesesA].reduce((s, m) => s + (dlP(m, c, e, l) ?? 0), 0); }
+function alAnualP(c, e, l) {
+  let total = 0;
+  for (let m = 1; m <= 12; m++) total += (dlP(m, c, e, l) ?? 0);
+  return total;
+}
 
 function lineasDe(c, e) {
   const acum = {};
@@ -315,13 +340,14 @@ function cellAcum(c, t, isPct) {
   if (isPct) {
     if (t === 'Var $') return '-';
     const nk = PCT_NR[c];
-    if (t === 'Real') return fmtPct(aR(nk), aR('Ingresos'));
+    if (t === 'Real')       return fmtPct(aR(nk), aR('Ingresos'));
+    if (t === 'Ppto Anual') return fmtPct(aPAnual(nk), aPAnual('Ingresos'));
     return fmtPct(aP(nk), aP('Ingresos'));
   }
-  const ar = aR(c), ap = aP(c);
-  if (t === 'Real')  return fmt(ar, enMM);
-  if (t === 'Ppto')  return fmt(ap, enMM);
-  return fmtVD(ar, ap, enMM);
+  if (t === 'Real')       return fmt(aR(c), enMM);
+  if (t === 'Ppto')       return fmt(aP(c), enMM);
+  if (t === 'Ppto Anual') return fmt(aPAnual(c), enMM);
+  return fmtVD(aR(c), aP(c), enMM);
 }
 
 function vCell(r, p, t) {
@@ -329,6 +355,13 @@ function vCell(r, p, t) {
   if (t === 'Ppto')  return fmt(p, enMM);
   if (t === 'Var $') return fmtVD(r, p, enMM);
   return fmtVP(r, p);
+}
+// Variante de vCell para columnas Acumulado: intercepta 'Ppto Anual'
+// (que necesita su propio valor, no el par r/p de meses seleccionados)
+// y delega el resto a vCell.
+function vCellAcum(r, p, pAnual, t) {
+  if (t === 'Ppto Anual') return fmt(pAnual, enMM);
+  return vCell(r, p, t);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -355,7 +388,7 @@ function buildEmpRow(c, e, meses, tp, ta, isExp) {
   meses.forEach(m => {
     tp.forEach(t => { row += `<td class="td-v">${vCell(deR(m,c,e), deP(m,c,e), t)}</td>`; });
   });
-  ta.forEach(t => { row += `<td class="td-v td-acum">${vCell(aeR(c,e), aeP(c,e), t)}</td>`; });
+  ta.forEach(t => { row += `<td class="td-v td-acum">${vCellAcum(aeR(c,e), aeP(c,e), aeAnualP(c,e), t)}</td>`; });
   return row + '</tr>';
 }
 
@@ -365,7 +398,7 @@ function buildLinRow(c, e, l, meses, tp, ta) {
   meses.forEach(m => {
     tp.forEach(t => { row += `<td class="td-v">${vCell(dlR(m,c,e,l), dlP(m,c,e,l), t)}</td>`; });
   });
-  ta.forEach(t => { row += `<td class="td-v td-acum">${vCell(alR(c,e,l), alP(c,e,l), t)}</td>`; });
+  ta.forEach(t => { row += `<td class="td-v td-acum">${vCellAcum(alR(c,e,l), alP(c,e,l), alAnualP(c,e,l), t)}</td>`; });
   return row + '</tr>';
 }
 
@@ -716,4 +749,103 @@ function buildGD() {
       }
     }
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  EXPORTAR PDF (screenshot de la tabla EERR actual)
+// ═══════════════════════════════════════════════════════════════════
+async function exportarPDF() {
+  const btn = document.getElementById('btn-pdf');
+  if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
+    alert('No se pudo generar el PDF: las librerías de exportación no cargaron. Revisa tu conexión a internet e intenta nuevamente.');
+    return;
+  }
+
+  const cont = document.getElementById('tbl-cont');
+  const prevStyle = {
+    overflow: cont.style.overflow,
+    width:    cont.style.width,
+    height:   cont.style.height,
+  };
+  // Ocultar temporalmente los botones +/- de drill-down: no deben
+  // aparecer en la captura, solo los datos.
+  const ddBtns = cont.querySelectorAll('.dd-btn');
+  ddBtns.forEach(b => { b.dataset.prevVis = b.style.visibility; b.style.visibility = 'hidden'; });
+
+  const prevBtnText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Generando…';
+
+  try {
+    // Expandir temporalmente el contenedor para que el scroll no oculte
+    // ninguna columna/fila al momento de capturar.
+    const fullW = cont.scrollWidth;
+    const fullH = cont.scrollHeight;
+    cont.style.overflow = 'visible';
+    cont.style.width    = fullW + 'px';
+    cont.style.height   = fullH + 'px';
+
+    const canvas = await html2canvas(cont, {
+      width: fullW,
+      height: fullH,
+      windowWidth: fullW,
+      windowHeight: fullH,
+      scale: 2,
+      backgroundColor: '#ffffff',
+    });
+
+    // Restaurar el contenedor y los botones de drill-down ANTES de tocar jsPDF
+    cont.style.overflow = prevStyle.overflow;
+    cont.style.width    = prevStyle.width;
+    cont.style.height   = prevStyle.height;
+    ddBtns.forEach(b => { b.style.visibility = b.dataset.prevVis || ''; delete b.dataset.prevVis; });
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const pageW  = pdf.internal.pageSize.getWidth();
+    const pageH  = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+
+    // Encabezado de contexto (fecha, empresa, meses incluidos)
+    const ahora    = new Date();
+    const fechaTxt = ahora.toLocaleDateString('es-CL', { year: 'numeric', month: 'long', day: 'numeric' });
+    const mesesTxt = mOrd().map(m => ABR[m]).join(', ');
+    pdf.setFontSize(11);
+    pdf.setFont(undefined, 'bold');
+    pdf.text('Panel EERR GEMCO', margin, margin);
+    pdf.setFontSize(8);
+    pdf.setFont(undefined, 'normal');
+    pdf.text(`Generado: ${fechaTxt}  ·  Empresa: ${empLabel()}  ·  Meses: ${mesesTxt}`, margin, margin + 5);
+
+    // Escalar la imagen para que quepa COMPLETA en una sola pagina,
+    // priorizando el ancho y cayendo a limitar por alto si hiciera falta.
+    const headerH = 12;
+    const areaW = pageW - margin * 2;
+    const areaH = pageH - margin * 2 - headerH;
+    const ratio = canvas.height / canvas.width;
+
+    let drawW = areaW, drawH = drawW * ratio;
+    if (drawH > areaH) { drawH = areaH; drawW = drawH / ratio; }
+
+    const offX = margin + (areaW - drawW) / 2;
+    const offY = margin + headerH + (areaH - drawH) / 2;
+    // 'FAST' activa compresion en el PNG embebido - sin esto jsPDF guarda
+    // el bitmap crudo sin comprimir (un PDF de varias decenas de MB).
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', offX, offY, drawW, drawH, undefined, 'FAST');
+
+    const y  = ahora.getFullYear();
+    const mo = String(ahora.getMonth() + 1).padStart(2, '0');
+    const d  = String(ahora.getDate()).padStart(2, '0');
+    pdf.save(`EERR_GEMCO_${y}-${mo}-${d}.pdf`);
+  } catch (e) {
+    // Asegurar restauracion aunque falle a mitad de camino
+    cont.style.overflow = prevStyle.overflow;
+    cont.style.width    = prevStyle.width;
+    cont.style.height   = prevStyle.height;
+    ddBtns.forEach(b => { b.style.visibility = b.dataset.prevVis || ''; delete b.dataset.prevVis; });
+    alert('No se pudo generar el PDF: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevBtnText;
+  }
 }
