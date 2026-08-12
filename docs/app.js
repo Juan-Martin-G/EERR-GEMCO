@@ -614,7 +614,7 @@ function buildGMain() {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
+        legend: { position: 'top', align: 'center', labels: { boxWidth: 10, font: { size: 11 } } },
         tooltip: { callbacks: { label: ctx => { const v = ctx.raw; if (v == null) return null; return fmtTip(v); } } }
       },
       scales: {
@@ -766,10 +766,12 @@ function ratioAcumP(ratio) {
 //  RATIOS — FORMATO Y COLOR
 // ═══════════════════════════════════════════════════════════════════
 function fmtRatio(v) { return v == null ? '-' : v.toFixed(1).replace('.', ',') + '%'; }
-function fmtVarPP(r, p) {
-  if (r == null || p == null) return '-';
-  const d = r - p;
-  return (d < 0 ? '-' : '+') + Math.abs(d).toFixed(1).replace('.', ',') + ' pp';
+// Var % relativo, mismo criterio que "Var %" de la tabla EERR:
+// (Real - Ppto) / ABS(Ppto) * 100. "-" si Ppto es 0 (division por cero).
+function fmtVarPct(r, p) {
+  if (r == null || p == null || p === 0) return '-';
+  const pct = (r - p) / Math.abs(p) * 100;
+  return (pct < 0 ? '-' : '+') + Math.abs(pct).toFixed(1).replace('.', ',') + '%';
 }
 // Semáforo por magnitud del ratio: >=90% rojo, 70-90% ámbar, <70% verde.
 function rtCellClass(v) {
@@ -779,8 +781,11 @@ function rtCellClass(v) {
   return 'rt-lo';
 }
 // VAR: positivo (costo real relativamente mayor al presupuestado) = desfavorable.
+// El signo de (Real-Ppto) es el mismo tanto en pp como en % relativo (ABS(Ppto)
+// solo escala la magnitud, nunca invierte el signo), asi que el criterio
+// favorable/desfavorable sigue siendo valido sin ajuste de umbral.
 function rtVarClass(r, p) {
-  if (r == null || p == null) return '';
+  if (r == null || p == null || p === 0) return '';
   const d = r - p;
   if (d > 0) return 'rt-var-bad';
   if (d < 0) return 'rt-var-good';
@@ -831,12 +836,12 @@ function rtBuildRow(ratio, meses) {
     const r = ratioMesR(m, ratio), p = ratioMesP(m, ratio);
     row += `<td class="td-v ${rtCellClass(r)}">${fmtRatio(r)}</td>`;
     row += `<td class="td-v ${rtCellClass(p)}">${fmtRatio(p)}</td>`;
-    row += `<td class="td-v ${rtVarClass(r, p)}">${fmtVarPP(r, p)}</td>`;
+    row += `<td class="td-v ${rtVarClass(r, p)}">${fmtVarPct(r, p)}</td>`;
   });
   const rAc = ratioAcumR(ratio), pAc = ratioAcumP(ratio);
   row += `<td class="td-v td-acum ${rtCellClass(rAc)}">${fmtRatio(rAc)}</td>`;
   row += `<td class="td-v td-acum ${rtCellClass(pAc)}">${fmtRatio(pAc)}</td>`;
-  row += `<td class="td-v td-acum ${rtVarClass(rAc, pAc)}">${fmtVarPP(rAc, pAc)}</td>`;
+  row += `<td class="td-v td-acum ${rtVarClass(rAc, pAc)}">${fmtVarPct(rAc, pAc)}</td>`;
   return row + '</tr>';
 }
 
@@ -880,7 +885,7 @@ function buildRatioChart(meses) {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
+        legend: { position: 'top', align: 'center', labels: { boxWidth: 10, font: { size: 11 } } },
         tooltip: { callbacks: { label: ctx => {
           const v = ctx.raw;
           if (v == null) return null;
