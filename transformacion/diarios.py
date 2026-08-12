@@ -13,6 +13,7 @@ Reglas clave (documentadas durante validación celda a celda):
 - Cuentas alfanuméricas (ej: "0005P") → se tratan como código -1 (sin mapeo).
 """
 
+import datetime as dt
 import re
 
 import pandas as pd
@@ -26,6 +27,34 @@ def cargar_mapeo_clasif() -> dict:
     """Carga el mapeo cuenta → nombre_eerr desde CSV de reglas."""
     df = pd.read_csv(_RULES_DIR / "mapeo_clasif.csv")
     return dict(zip(df["cuenta"], df["nombre_eerr"]))
+
+
+def _parse_fecha_contabilizacion(serie: pd.Series) -> pd.Series:
+    """
+    Convierte la columna 'Fecha de contabilización' a datetime, con manejo
+    defensivo de celdas que llegan como numero de serie crudo de Excel
+    (pegadas sin formato de fecha) en vez de una fecha real.
+
+    Sin este manejo, pd.to_datetime() interpreta ese numero crudo como
+    nanosegundos desde 1970-01-01, produciendo una fecha basura cuyo mes
+    puede coincidir por azar con enero y contaminar silenciosamente ese
+    mes con transacciones de otro periodo. Bug real detectado: 152 filas
+    de Julio 2026 en 'Diario Tecservice' (cuenta 610124 entre otras)
+    quedaban clasificadas como Enero por este motivo, inflando GPBE
+    Directos en ~9.3M.
+    """
+    fecha = pd.to_datetime(serie, errors="coerce")
+
+    es_serial_crudo = (
+        pd.to_numeric(serie, errors="coerce").notna() &
+        ~serie.apply(lambda x: isinstance(x, (dt.datetime, dt.date)))
+    )
+    if es_serial_crudo.any():
+        # Sistema de fechas de Excel (Windows): dia 0 = 1899-12-30
+        fecha.loc[es_serial_crudo] = pd.to_datetime(
+            pd.to_numeric(serie[es_serial_crudo]), unit="D", origin="1899-12-30"
+        )
+    return fecha
 
 
 def _to_int_cuenta(valor) -> int:
@@ -78,7 +107,7 @@ def limpiar_incardia(df_raw: pd.DataFrame, mapeo: dict) -> pd.DataFrame:
     df = df_raw.copy()
 
     # 1. Tipos
-    df["Fecha"] = pd.to_datetime(df["Fecha de contabilización"], errors="coerce")
+    df["Fecha"] = _parse_fecha_contabilizacion(df["Fecha de contabilización"])
     df["Cargo/abono (ML)"] = pd.to_numeric(df["Cargo/abono (ML)"], errors="coerce")
 
     # 2. Código de cuenta seguro (alfanuméricos → -1)
@@ -129,7 +158,7 @@ def limpiar_mmq(df_raw: pd.DataFrame, mapeo: dict) -> pd.DataFrame:
     """
     df = df_raw.copy()
 
-    df["Fecha"] = pd.to_datetime(df["Fecha de contabilización"], errors="coerce")
+    df["Fecha"] = _parse_fecha_contabilizacion(df["Fecha de contabilización"])
     df["Cargo/abono (ML)"] = pd.to_numeric(df["Cargo/abono (ML)"], errors="coerce")
     df["Cuenta_Int"] = df["Cuenta de mayor/Código SN"].apply(_to_int_cuenta)
 
@@ -175,7 +204,7 @@ def limpiar_tecservice(df_raw: pd.DataFrame, mapeo: dict) -> pd.DataFrame:
     """
     df = df_raw.copy()
 
-    df["Fecha"] = pd.to_datetime(df["Fecha de contabilización"], errors="coerce")
+    df["Fecha"] = _parse_fecha_contabilizacion(df["Fecha de contabilización"])
     df["Cargo/abono (ML)"] = pd.to_numeric(df["Cargo/abono (ML)"], errors="coerce")
     df["Cuenta_Int"] = df["Cuenta de mayor/Código SN"].apply(_to_int_cuenta)
 
@@ -218,7 +247,7 @@ def limpiar_gemco(df_raw: pd.DataFrame) -> pd.DataFrame:
     """
     df = df_raw.copy()
 
-    df["Fecha"] = pd.to_datetime(df["Fecha de contabilización"], errors="coerce")
+    df["Fecha"] = _parse_fecha_contabilizacion(df["Fecha de contabilización"])
     df["Cargo/abono (ML)"] = pd.to_numeric(df["Cargo/abono (ML)"], errors="coerce")
     df["Cuenta_Int"] = df["Cuenta de mayor/Código SN"].apply(_to_int_cuenta)
 
