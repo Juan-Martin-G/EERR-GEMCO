@@ -471,6 +471,12 @@ def main():
     print("Cargando base Real (V11.xlsx)...")
     base = cargar_base_real(ARCHIVO_V11)
 
+    # Meses con datos Real disponibles, detectados directamente desde la
+    # base (evita tener que editar esta lista a mano cada vez que llega
+    # un mes nuevo).
+    meses_con_real = sorted(base["Fecha"].dt.month.dropna().unique().tolist())
+    meses_con_real = [int(m) for m in meses_con_real]
+
     print("Cargando base Presupuesto (PPTO_V2.xlsx)...")
     full_ppto = cargar_presupuesto_completo(ARCHIVO_PPTO)
 
@@ -498,8 +504,7 @@ def main():
 
     salida = {
         "meta": {
-            "meses_con_real": [1, 2, 3, 4, 5, 6, 7],  # ajustar cada vez que
-                                                  # se agregue un mes nuevo
+            "meses_con_real": meses_con_real,
         },
         "meses_nombre": MESES_NOMBRE,
         "estructura_eerr": ESTRUCTURA_EERR,
