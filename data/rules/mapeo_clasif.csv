@@ -1,21 +1,50 @@
 cuenta,nombre_eerr
 410101,Ingresos de actividades ordinarias
+410102,Ingresos de actividades ordinarias
+410103,Ingresos de actividades ordinarias
+410104,Ingresos de actividades ordinarias
+410105,Ingresos de actividades ordinarias
+410106,Ingresos de actividades ordinarias
+410108,Ingresos de actividades ordinarias
+410109,Ingresos de actividades ordinarias
 410110,Ingresos de actividades ordinarias
+410113,Ingresos de actividades ordinarias
+410117,Ingresos de actividades ordinarias
+410121,Ingresos de actividades ordinarias
+410131,Ingresos de actividades ordinarias
+410300,Otros Ingresos por Función
+410700,Ingreso Financiero
+410900,Otros gastos por función
+412001,Finiquitos
+412002,Multas
+412004,Provisión Obsolescencias Inventarios
+412005,Provisión Incobrales
 510101,Costo de ventas
 510102,Costo de ventas
 510103,Costo de ventas
 510104,Costo de ventas
 510105,Costo de ventas
 510106,Costo de ventas
-510111,Costo de ventas
-510112,Costo de ventas
+510109,Costo de ventas
+510110,Costo de ventas
+510111,Otros gastos por naturaleza
+510112,Otros gastos por naturaleza
 510113,Costo de ventas
 510114,Costo de ventas
 510115,Costo de ventas
+510116,Costo de ventas
 510117,Costo de ventas
+510118,Costo de ventas
 510119,Costo de ventas
+510120,Costo de ventas
+510122,Costo de ventas
+510123,Costo de ventas
+510125,Costo de ventas
+510126,Costo de ventas
 510129,Costo de ventas
 510131,Costo de ventas
+510132,Costo de ventas
+510133,Costo de ventas
 610101,Gastos por beneficios a los empleados
 610102,Gastos por beneficios a los empleados
 610103,Gastos por beneficios a los empleados
@@ -32,46 +61,76 @@ cuenta,nombre_eerr
 610115,Gastos por beneficios a los empleados
 610116,Gastos por beneficios a los empleados
 610117,Gastos por beneficios a los empleados
+610118,Gastos por beneficios a los empleados
 610120,Gastos por beneficios a los empleados
 610121,Gastos por beneficios a los empleados
 610122,Gastos por beneficios a los empleados
+610123,Gastos por beneficios a los empleados
 610124,Gastos por beneficios a los empleados
 610125,Gastos por beneficios a los empleados
 610126,Gastos por beneficios a los empleados
 610128,Gastos por beneficios a los empleados
+610129,Gastos por beneficios a los empleados
 610130,Gastos por beneficios a los empleados
+610131,Gastos por beneficios a los empleados
 610132,Gastos por beneficios a los empleados
 610133,Gastos por beneficios a los empleados
-610206,Gastos por beneficios a los empleados
 610201,Otros gastos por naturaleza
+610202,Otros gastos por naturaleza
 610203,Otros gastos por naturaleza
 610204,Otros gastos por naturaleza
 610205,Otros gastos por naturaleza
+610206,Gastos por beneficios a los empleados
+610301,Otros gastos por naturaleza
 610302,Otros gastos por naturaleza
 610303,Otros gastos por naturaleza
+610304,Otros gastos por naturaleza
+610305,Otros gastos por naturaleza
 610306,Otros gastos por naturaleza
 610307,Otros gastos por naturaleza
 610308,Otros gastos por naturaleza
 610309,Otros gastos por naturaleza
+610310,Otros gastos por naturaleza
+610311,Otros gastos por naturaleza
+610312,Otros gastos por naturaleza
+610313,Otros gastos por naturaleza
+610402,Otros gastos por naturaleza
 610403,Otros gastos por naturaleza
+610404,Otros gastos por naturaleza
+610405,Otros gastos por naturaleza
+610406,Otros gastos por naturaleza
 610407,Otros gastos por naturaleza
 610501,Otros gastos por naturaleza
+610502,Otros gastos por naturaleza
+610503,Otros gastos por naturaleza
+610505,Otros gastos por naturaleza
 610508,Otros gastos por naturaleza
 610509,Otros gastos por naturaleza
+610510,Otros gastos por naturaleza
 610511,Otros gastos por naturaleza
+610512,Otros gastos por naturaleza
 610513,Otros gastos por naturaleza
+610515,Otros gastos por naturaleza
 610516,Otros gastos por naturaleza
+610517,Otros gastos por naturaleza
 610518,Otros gastos por naturaleza
+610601,Otros gastos por naturaleza
+610603,Otros gastos por naturaleza
 610604,Otros gastos por naturaleza
+610605,Otros gastos por naturaleza
 610701,Otros gastos por naturaleza
 610702,Otros gastos por naturaleza
 610703,Otros gastos por naturaleza
+610704,Otros gastos por naturaleza
 610705,Otros gastos por naturaleza
+610706,Otros gastos por naturaleza
 610707,Otros gastos por naturaleza
 610708,Otros gastos por naturaleza
 610709,Otros gastos por naturaleza
 610710,Otros gastos por naturaleza
+610801,Otros gastos por naturaleza
 610803,Otros gastos por naturaleza
+610804,Otros gastos por naturaleza
 610901,Otros gastos por naturaleza
 610902,Otros gastos por naturaleza
 610903,Otros gastos por naturaleza
@@ -80,26 +139,36 @@ cuenta,nombre_eerr
 610906,Otros gastos por naturaleza
 610907,Otros gastos por naturaleza
 610908,Otros gastos por naturaleza
-611002,Otros gastos por naturaleza
+611002,Gastos por depreciación y amortización
 611004,Gastos por depreciación y amortización
 611005,Gastos por depreciación y amortización
-611007,Otros gastos por naturaleza
+611007,Gastos por depreciación y amortización
 611008,Gastos por depreciación y amortización
-611009,Otros gastos por naturaleza
+611009,Gastos por depreciación y amortización
+611010,Gastos por depreciación y amortización
+611011,Gastos por depreciación y amortización
+611101,Otros gastos por naturaleza
 611102,Otros gastos por naturaleza
-611201,Otros gastos por naturaleza
+611103,Otros gastos por naturaleza
+611201,Gastos por depreciación y amortización
+611202,Gastos por depreciación y amortización
 611301,Finiquitos
 611302,Multas
 611303,Finiquitos
+611304,Provisión Obsolescencias Inventarios
+611305,Provisión Incobrales
+611306,Provisión Habilitación Oficinas
 615018,Otros gastos por naturaleza
 710101,Otros Ingresos por Función
 710102,Otros Ingresos por Función
+710103,Otros Ingresos por Función
 710301,Otros Ingresos por Función
 710302,Otros Ingresos por Función
 810101,Costo financiero
 810102,Costo financiero
 810103,Costo financiero
 810104,Costo financiero
+810105,Costo financiero
 810106,Costo financiero
 810107,Costo financiero
 810108,Costo financiero
@@ -107,26 +176,28 @@ cuenta,nombre_eerr
 810110,Costo financiero
 810111,Costo financiero
 810112,Costo financiero
+810113,Costo financiero
+810114,Costo financiero
 810115,Costo financiero
+810116,Costo financiero
+810117,Costo financiero
+810118,Costo financiero
+810201,Otros gastos por función
 810202,Otros gastos por función
-810203,Ingreso Financiero
-810205,Ingreso Financiero
+810203,Otros gastos por función
+810205,Otros gastos por función
 810301,Diferencia de cambio
-810305,Diferencia de cambio
+810305,Otros gastos por función
+810306,Otros gastos por función
 810310,Diferencia de cambio
 810312,Diferencia de cambio
+810313,Diferencia de cambio
+810314,Diferencia de cambio
+810315,Otros gastos por función
+810316,Otros gastos por función
 810401,Impuesto a la renta
 810402,Impuesto a la renta
 810403,Impuesto a la renta
 810501,Provisión Obsolescencias Inventarios
+810503,Diferencia de cambio
 811100,Diferencia de cambio
-412004,Provisión Obsolescencias Inventarios
-412005,Provisión Incobrales
-410300,Otros Ingresos por Función
-410700,Ingreso Financiero
-410900,Otros gastos por función
-412001,Finiquitos
-412002,Multas
-810118,Costo financiero
-410109,Ingresos de actividades ordinarias
-610202,Otros gastos por naturaleza
