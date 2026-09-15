@@ -262,7 +262,7 @@ function mmqSolo() {
 // ═══════════════════════════════════════════════════════════════════
 function mOrd()   { return [1,2,3,4,5,6,7,8,9,10,11,12].filter(m => mesesA.has(m)); }
 function tipos()  { return ['Real','Ppto',...(varD?['Var $']:[]),...(varPct?['Var %']:[])]; }
-function tiposA() { return ['Real','Ppto','Ppto Anual',...(varD?['Var $']:[]),...(varPct?['Var %']:[])]; }
+function tiposA() { return ['Real','Ppto',...(varD?['Var $']:[]),...(varPct?['Var %']:[]),'Ppto Anual']; }
 
 // Nivel 0: valor de concepto para el alcance activo (Consolidado o suma de empresas)
 function gR(m, c) {
