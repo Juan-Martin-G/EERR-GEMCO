@@ -93,6 +93,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 .row-emp:hover .sticky-l{background:#e8eef5}
 .row-lin .sticky-l{background:#f6f8fa}
 .row-lin:hover .sticky-l{background:#edf2f5}
+/* Con border-collapse:collapse el borde de la celda sticky lo pinta la tabla
+   (y se desplaza con el scroll), dejando una franja de ~1px por donde asoma
+   el texto de las columnas que pasan por debajo. El outline lo pinta la
+   propia celda, asi que se mueve con ella y tapa esa franja. */
+#eerr-tbl tbody td.sticky-l,
+#rt-tbl tbody td.sticky-l{outline:1px solid #d8dde4;outline-offset:-1px}
 
 /* Concepto cells */
 .td-c{text-align:left;min-width:210px;max-width:280px;white-space:normal}
@@ -147,6 +153,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 #rt-tbl thead tr:first-child th{background:var(--az2);color:#fff;text-align:center;font-weight:700;height:28px}
 #rt-tbl thead tr:last-child th{background:#2a4f6a;color:#d4e8f0;text-align:center;font-size:11px;font-weight:600}
 #rt-tbl .td-c{min-width:230px}
+/* Celda sticky "Indicador": las filas no tienen fondo propio, asi que sin
+   esto la celda queda transparente y el texto de las columnas de la
+   derecha se ve a traves al hacer scroll horizontal. */
+#rt-tbl tbody td.sticky-l{background:var(--wh)}
 .rt-row-active td.td-c{background:#dbe8ef !important;font-weight:700;border-left:3px solid var(--az)}
 .rt-row-active td:not(.td-c){font-weight:700}
 .rt-hi{background:#fbe3dc;color:#a8452a}
