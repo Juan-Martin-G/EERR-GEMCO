@@ -127,6 +127,11 @@ def limpiar_incardia(df_raw: pd.DataFrame, mapeo: dict) -> pd.DataFrame:
     df = df[
         df["Cargo/abono (ML)"].notna() &
         (df["Cargo/abono (ML)"] != 0) &
+        # Solo cuentas de resultado reales (6 digitos, 410101..810601 segun
+        # el plan de cuentas). Excluye RUTs de clientes/proveedores usados
+        # como codigos auxiliares, que por tener 8 digitos pasaban el
+        # limite inferior y contaminaban el EERR.
+        (df["Cuenta_Int"] >= 400000) & (df["Cuenta_Int"] < 820000) &
         (~df["Nombre en EERR"].isin(["No corresponde", "Sin clasificar",
                                       "Impuesto a la renta"]))
     ].copy()
@@ -173,6 +178,11 @@ def limpiar_mmq(df_raw: pd.DataFrame, mapeo: dict) -> pd.DataFrame:
     df = df[
         df["Cargo/abono (ML)"].notna() &
         (df["Cargo/abono (ML)"] != 0) &
+        # Solo cuentas de resultado reales (6 digitos, 410101..810601 segun
+        # el plan de cuentas). Excluye RUTs de clientes/proveedores usados
+        # como codigos auxiliares, que por tener 8 digitos pasaban el
+        # limite inferior y contaminaban el EERR.
+        (df["Cuenta_Int"] >= 400000) & (df["Cuenta_Int"] < 820000) &
         (~df["Nombre en EERR"].isin(["No corresponde", "Sin clasificar",
                                       "Impuesto a la renta"]))
     ].copy()
@@ -219,6 +229,11 @@ def limpiar_tecservice(df_raw: pd.DataFrame, mapeo: dict) -> pd.DataFrame:
     df = df[
         df["Cargo/abono (ML)"].notna() &
         (df["Cargo/abono (ML)"] != 0) &
+        # Solo cuentas de resultado reales (6 digitos, 410101..810601 segun
+        # el plan de cuentas). Excluye RUTs de clientes/proveedores usados
+        # como codigos auxiliares, que por tener 8 digitos pasaban el
+        # limite inferior y contaminaban el EERR.
+        (df["Cuenta_Int"] >= 400000) & (df["Cuenta_Int"] < 820000) &
         (~df["Nombre en EERR"].isin(["No corresponde", "Sin clasificar",
                                       "Impuesto a la renta"]))
     ].copy()
@@ -241,7 +256,8 @@ def limpiar_gemco(df_raw: pd.DataFrame) -> pd.DataFrame:
     Limpia el Diario GEMCO. Equivalente a 'Diario GEMCO Limpio' en PQ.
 
     Reglas GEMCO específicas:
-    - Excluir cuentas de balance (código < 400000)
+    - Solo cuentas de resultado: 400000 <= código < 820000 (excluye balance
+      por abajo y RUTs/códigos auxiliares de 8 dígitos por arriba)
     - Excluir filas donde GAV = 'No corresponde' Y UNIDAD 2 = 'No corresponde'
     - Normalizar Nombre en EERR (quitar Directos/Indirectos)
     """
@@ -258,7 +274,11 @@ def limpiar_gemco(df_raw: pd.DataFrame) -> pd.DataFrame:
         (df["Nombre en EERR"] != "No corresponde") &
         df["Cargo/abono (ML)"].notna() &
         (df["Cargo/abono (ML)"] != 0) &
-        (df["Cuenta_Int"] >= 400000)
+        # Ver nota en limpiar_incardia: el limite superior deja fuera los
+        # RUTs usados como codigos auxiliares. GEMCO no usa mapeo_clasif,
+        # asi que sin este limite un RUT cuyo nombre nativo calce con un
+        # concepto del EERR entra sin ningun otro filtro que lo detenga.
+        (df["Cuenta_Int"] >= 400000) & (df["Cuenta_Int"] < 820000)
     ].copy()
 
     df["Empresa"] = "GEMCO"
