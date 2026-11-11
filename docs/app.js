@@ -61,6 +61,12 @@ let gVista = 'bar', gReal = true, gPpto = true;
 let rtCosto = RATIOS[0].key;
 let cRatio  = null;
 
+// Estado hoja Líneas (EERR por Línea de Negocio)
+let LIN        = null;       // datos_lineas.json: se descarga la primera vez que se abre la hoja
+let linCarga   = null;       // descarga en curso (Promise)
+let linMeses   = new Set();  // meses a sumar (solo meses con Real); al iniciar, todos
+let exLin      = new Set();  // conceptos expandidos (drill por centro de origen)
+
 // ═══════════════════════════════════════════════════════════════════
 //  FETCH Y ARRANQUE
 // ═══════════════════════════════════════════════════════════════════
@@ -87,6 +93,8 @@ function init() {
   renderTable();
   initGrafControls();
   initRatiosControls();
+  buildLinMesesBtns();
+  document.getElementById('lin-tbody').addEventListener('click', handleDrillLin);
   setHoja('eerr');
 }
 
@@ -100,9 +108,16 @@ function setHoja(h) {
   document.getElementById('view-eerr').style.display     = h === 'eerr'     ? '' : 'none';
   document.getElementById('view-graf').style.display     = h === 'graficos' ? '' : 'none';
   document.getElementById('view-ratios').style.display   = h === 'ratios'   ? '' : 'none';
+  document.getElementById('view-lineas').style.display   = h === 'lineas'   ? '' : 'none';
   document.getElementById('sel-eerr-ctrl').style.display = h === 'eerr'     ? '' : 'none';
+  // La hoja Líneas tiene su propio selector de meses (solo meses con Real,
+  // la misma selección para todas las columnas) y no usa el de Empresa.
+  document.getElementById('sel-lineas-ctrl').style.display = h === 'lineas' ? '' : 'none';
+  document.getElementById('sel-grp-meses').style.display   = h === 'lineas' ? 'none' : '';
+  document.getElementById('sel-grp-empresa').style.display = h === 'lineas' ? 'none' : '';
   if (h === 'graficos') renderGraf();
   if (h === 'ratios')   renderRatios();
+  if (h === 'lineas')   abrirLineas();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -178,9 +193,12 @@ function toggleVarPct() {
   renderTable();
 }
 function toggleMM() {
+  // La escala es una sola para la hoja EERR y la hoja Líneas.
   enMM = !enMM;
   document.getElementById('btn-mm').classList.toggle('active', enMM);
+  document.getElementById('btn-mm-lin').classList.toggle('active', enMM);
   renderTable();
+  if (LIN) renderLineas();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -914,6 +932,266 @@ function renderRatios() {
   rtBuildHead(meses);
   rtRenderBody(meses);
   buildRatioChart(meses);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  LÍNEAS — EERR POR LÍNEA DE NEGOCIO
+// ═══════════════════════════════════════════════════════════════════
+// Columnas = líneas de negocio + Total; filas = los mismos conceptos de la
+// hoja EERR. Los datos están en datos_lineas.json (generar_datos.py), que
+// se descarga la primera vez que se abre la hoja.
+//
+// Cada valor es la SUMA de los meses seleccionados (uno o varios), calculada
+// aquí desde los bloques mensuales del JSON. La clave "Acumulado" del JSON
+// no se usa. Los porcentajes se recalculan desde los totales ya sumados.
+
+// ── Selector de meses (selección múltiple, como el de la hoja EERR) ──
+// Diferencias con el de la hoja EERR: solo ofrece los meses con Real, y
+// puede quedar vacío (la hoja muestra un aviso en vez de la tabla).
+function buildLinMesesBtns() {
+  const cont = document.getElementById('sel-meses-lin');
+  linMeses = new Set(DATA.meta.meses_con_real);   // al abrir: todos los meses con Real
+  DATA.meta.meses_con_real.forEach(m => {
+    const b = document.createElement('button');
+    b.className = 'sel-btn active';
+    b.textContent = ABR[m];
+    b.dataset.mes = m;
+    b.onclick = () => {
+      if (linMeses.has(m)) linMeses.delete(m); else linMeses.add(m);
+      linCambioMeses();
+    };
+    cont.appendChild(b);
+  });
+  linPintarPeriodo();
+}
+function linSelTodos()   { linMeses = new Set(DATA.meta.meses_con_real); linCambioMeses(); }
+function linSelLimpiar() { linMeses = new Set(); linCambioMeses(); }
+
+function linCambioMeses() {
+  document.querySelectorAll('#sel-meses-lin .sel-btn').forEach(x =>
+    x.classList.toggle('active', linMeses.has(+x.dataset.mes)));
+  linPintarPeriodo();
+  if (LIN) renderLineas();   // los conceptos expandidos (exLin) se conservan
+}
+
+// Meses seleccionados, en orden.
+function linMesesSel() { return DATA.meta.meses_con_real.filter(m => linMeses.has(m)); }
+
+// "Ene–Sep" si los meses son consecutivos; "Ene, Mar, May" si no lo son.
+function linPeriodoTxt() {
+  const ms = linMesesSel();
+  if (!ms.length) return '';
+  if (ms.length === 1) return ABR[ms[0]];
+  const consecutivos = ms.every((m, i) => i === 0 || m === ms[i - 1] + 1);
+  return consecutivos
+    ? `${ABR[ms[0]]}–${ABR[ms[ms.length - 1]]}`
+    : ms.map(m => ABR[m]).join(', ');
+}
+
+// Texto del período activo: sobre la tabla y al inicio de la nota al pie.
+function linPintarPeriodo() {
+  const n = linMesesSel().length, txt = linPeriodoTxt();
+  document.getElementById('lin-periodo-txt').textContent = n ? txt : 'ningún mes seleccionado';
+  document.getElementById('lin-nota-periodo').textContent = !n ? ''
+    : n === 1 ? `Período: ${txt}. `
+    : `Período: ${txt} (suma de los ${n} meses seleccionados). `;
+}
+
+// ── Descarga de datos (solo la primera vez) ──────────────────────
+function cargarLineas() {
+  if (LIN) return Promise.resolve(LIN);
+  if (!linCarga) {
+    linCarga = fetch('datos_lineas.json')
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(d => {
+        if (!d.lineas_real || !d.lineas_total_real || !d.lineas_drill_real) {
+          throw new Error('el archivo no tiene el formato esperado');
+        }
+        LIN = d;
+        return d;
+      })
+      .catch(e => { linCarga = null; throw e; }); // permite reintentar al reabrir la hoja
+  }
+  return linCarga;
+}
+
+function linMensaje(html, esError) {
+  const msg = document.getElementById('lin-msg');
+  msg.className = 'lin-msg' + (esError ? ' err' : '');
+  msg.innerHTML = html;
+  msg.style.display = '';
+  document.getElementById('lin-tbl').style.display  = 'none';
+  document.getElementById('lin-nota').style.display = 'none';
+}
+
+function abrirLineas() {
+  if (LIN) { renderLineas(); return; }
+  linMensaje('Cargando datos por línea de negocio…', false);
+  cargarLineas()
+    .then(() => renderLineas())
+    .catch(e => linMensaje(
+      `No se pudieron cargar los datos de la hoja Líneas (datos_lineas.json): ${esc(e.message)}.` +
+      `<small>El resto del panel sigue funcionando. Vuelve a abrir esta pestaña para ` +
+      `reintentar; si el problema continúa, hay que regenerar y publicar el archivo ` +
+      `con generar_datos.py.</small>`, true));
+}
+
+// ── Acceso a datos ───────────────────────────────────────────────
+function linLineas()   { return Object.keys(LIN.lineas_real); }
+// Suma de un concepto en los meses seleccionados, dentro de un bloque
+// {mes: {concepto: valor}}. null si ningún mes trae el dato.
+function linSuma(porMes, c) {
+  let total = 0, any = false;
+  for (const m of linMesesSel()) {
+    const v = porMes?.[m + '']?.[c];
+    if (v != null) { total += v; any = true; }
+  }
+  return any ? total : null;
+}
+function linVal(l, c)  { return linSuma(LIN.lineas_real[l], c); }
+function linTot(c)     { return linSuma(LIN.lineas_total_real, c); }
+// Consolidado del panel para los mismos meses (para la fila de control).
+function linCons(c)    { return linSuma(DATA.real['Consolidado'], c); }
+
+// Drill de un concepto en los meses seleccionados: {línea: {centro: suma}}.
+// Igual que en el JSON, se omiten los centros cuya suma es 0.
+function linDrillSuma(c, lineas) {
+  const out = {};
+  const meses = linMesesSel();
+  lineas.forEach(l => {
+    const acum = {};
+    meses.forEach(m => {
+      const porCentro = LIN.lineas_drill_real[c]?.[l]?.[m + ''] || {};
+      Object.entries(porCentro).forEach(([k, v]) => { acum[k] = (acum[k] || 0) + v; });
+    });
+    Object.keys(acum).forEach(k => { if (acum[k] === 0) delete acum[k]; });
+    out[l] = acum;
+  });
+  return out;
+}
+
+// Centros de origen que aportan a un concepto en el período: primero los
+// diarios propios (Incardia / MMQ / Tecservice), luego los centros de
+// costo por código.
+function linCentros(drill, lineas) {
+  const claves = new Set();
+  lineas.forEach(l => Object.keys(drill[l]).forEach(k => claves.add(k)));
+  const esCod = k => /^\d+$/.test(k);
+  return [...claves].sort((a, b) => {
+    if (esCod(a) !== esCod(b)) return esCod(a) ? 1 : -1;
+    return esCod(a) ? a - b : a.localeCompare(b);
+  });
+}
+
+// ── Cabecera: una sola fila, líneas + Total ──────────────────────
+// (los porcentajes del prorrateo siguen en LIN.lineas_prorrateo, pero
+// no se muestran en la hoja)
+function linBuildHead(lineas) {
+  let h = `<tr><th class="th-conc sticky-l">Concepto</th>`;
+  lineas.forEach(l => { h += `<th>${esc(l)}</th>`; });
+  h += `<th class="th-acum">Total</th></tr>`;
+  document.getElementById('lin-thead').innerHTML = h;
+}
+
+// ── Filas ────────────────────────────────────────────────────────
+function linMainRow(c, nv, tip, lineas, hasDrill, isExp) {
+  const isPct = FILAS_PCT.has(c);
+  const rcls  = tip === 'subtotal'   ? 'row-sub'
+              : tip === 'porcentaje' ? 'row-pct' : 'row-norm';
+  const icls  = nv === 1 ? 'conc-n1' : 'conc-n0';
+  const ddb   = hasDrill
+    ? `<button class="dd-btn" data-c="${esc(c)}">${isExp ? '−' : '+'}</button>`
+    : '<span class="dd-sp"></span>';
+  // Los porcentajes se recalculan con los totales de cada columna.
+  const celda = get => isPct ? fmtPct(get(PCT_NR[c]), get('Ingresos')) : fmt(get(c), enMM);
+  let row = `<tr class="${rcls}" data-c="${esc(c)}">`;
+  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(nombreLargo(c))}</td>`;
+  lineas.forEach(l => { row += `<td class="td-v">${celda(k => linVal(l, k))}</td>`; });
+  row += `<td class="td-v td-acum">${celda(linTot)}</td>`;
+  return row + '</tr>';
+}
+
+function linCentroRow(c, k, lineas, drill, prorrateados) {
+  const etiqueta = LIN.lineas_centros?.[k] ?? k;
+  const sufijo   = prorrateados.has(k) ? ' (prorrateo)' : '';
+  let total = 0;
+  let row = `<tr class="row-emp" data-drill="${esc(c)}">`;
+  row += `<td class="td-c sticky-l conc-emp"><span class="dd-sp"></span><em>${esc(etiqueta)}</em>${sufijo}</td>`;
+  lineas.forEach(l => {
+    const v = drill[l][k] ?? null;
+    if (v != null) total += v;
+    row += `<td class="td-v">${fmt(v, enMM)}</td>`;
+  });
+  row += `<td class="td-v td-acum">${fmt(total, enMM)}</td>`;
+  return row + '</tr>';
+}
+
+// Fila de control: Total líneas − Consolidado, con los mismos meses
+// seleccionados y revisado en TODOS los conceptos. Muestra la mayor
+// diferencia (siempre en pesos); debe ser 0.
+// Si algún concepto difiere en más de 1 peso se marca en rojo y se nombra.
+function linControlRow(lineas) {
+  const difs = DATA.estructura_eerr
+    .filter(([c]) => !FILAS_PCT.has(c))
+    .map(([c]) => [c, (linTot(c) ?? 0) - (linCons(c) ?? 0)]);
+  const peor  = difs.reduce((a, b) => Math.abs(b[1]) > Math.abs(a[1]) ? b : a, ['', 0])[1];
+  const malos = difs.filter(([, d]) => Math.abs(d) > 1);
+  const cls   = malos.length ? ' rt-var-bad' : '';
+  const det   = malos.length
+    ? `<br><span class="rt-var-bad">No cuadra: ${malos.map(([c, d]) => `${esc(c)} ${fmt(d, false)}`).join('; ')}</span>`
+    : '';
+  let row = `<tr class="row-sub" id="lin-control">`;
+  row += `<td class="td-c sticky-l conc-n0"><span class="dd-sp"></span>Total líneas − Consolidado (mayor diferencia, en pesos)${det}</td>`;
+  lineas.forEach(() => { row += '<td class="td-v"></td>'; });
+  row += `<td class="td-v td-acum${cls}">${fmt(peor, false)}</td>`;
+  return row + '</tr>';
+}
+
+// ── Render ───────────────────────────────────────────────────────
+function renderLineas() {
+  linPintarPeriodo();
+  if (!linMesesSel().length) {
+    linMensaje('Selecciona al menos un mes.', false);
+    return;
+  }
+  document.getElementById('lin-msg').style.display  = 'none';
+  document.getElementById('lin-tbl').style.display  = '';
+  document.getElementById('lin-nota').style.display = '';
+  const lineas = linLineas();
+  linBuildHead(lineas);
+  linRebuildBody(lineas);
+}
+
+function linRebuildBody(lineas) {
+  if (!lineas) lineas = linLineas();
+  const cont = document.getElementById('lin-cont');
+  const sl = cont.scrollLeft, st = cont.scrollTop;
+  const prorrateados = new Set(LIN.lineas_centros_prorrateados || []);
+  let html = '';
+
+  for (const [c, nv, tip] of DATA.estructura_eerr) {
+    const hasDrill = !FILAS_PCT.has(c) && !!LIN.lineas_drill_real[c];
+    const isExp    = hasDrill && exLin.has(c);
+    html += linMainRow(c, nv, tip, lineas, hasDrill, isExp);
+    if (isExp) {
+      const drill = linDrillSuma(c, lineas);
+      linCentros(drill, lineas).forEach(k => { html += linCentroRow(c, k, lineas, drill, prorrateados); });
+    }
+  }
+  html += linControlRow(lineas);
+
+  document.getElementById('lin-tbody').innerHTML = html;
+  cont.scrollLeft = sl;
+  cont.scrollTop  = st;
+}
+
+// ── Drill-down por centro de origen ──────────────────────────────
+function handleDrillLin(e) {
+  const btn = e.target.closest('.dd-btn');
+  if (!btn) return;
+  const c = btn.dataset.c;
+  if (exLin.has(c)) exLin.delete(c); else exLin.add(c);
+  linRebuildBody();
 }
 
 // ═══════════════════════════════════════════════════════════════════

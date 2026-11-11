@@ -13,10 +13,13 @@ USO: correr este script cada vez que se actualicen los datos fuente
 Genera: docs/datos_eerr.json (ajustar ruta de salida segun la estructura
 del repo que se use en GitHub Pages - 'docs/' es la convencion mas comun
 para servir GitHub Pages desde una subcarpeta del repo principal).
+Genera tambien docs/datos_lineas.json (EERR por Linea de Negocio), que el
+panel descarga solo al abrir la hoja "Lineas".
 
 Reutiliza EXACTAMENTE la misma logica ya validada en:
   - transformacion/diarios.py
   - transformacion/presupuesto.py
+  - transformacion/lineas.py   (EERR por Linea de Negocio)
   - calculo/eerr.py
   - calculo/eerr_presupuesto.py
 No reimplementa ninguna regla de negocio - solo orquesta y serializa.
@@ -31,6 +34,10 @@ from transformacion.diarios import (
     limpiar_mmq, limpiar_tecservice, consolidar,
 )
 from transformacion.presupuesto import cargar_presupuesto_completo
+from transformacion.lineas import (
+    asignar_lineas, cargar_centro_linea, cargar_prorrateo, lineas_reporte,
+    LINEA_POR_EMPRESA, PRORRATEO, SIN_ASIGNAR,
+)
 from calculo.eerr import calcular_eerr
 from calculo.eerr_presupuesto import calcular_eerr_ppto
 
@@ -41,6 +48,9 @@ from calculo.eerr_presupuesto import calcular_eerr_ppto
 ARCHIVO_V11 = "data/raw/v8.xlsx"
 ARCHIVO_PPTO = "data/raw/PPTO_V2.xlsx"
 SALIDA_JSON = "docs/datos_eerr.json"
+# EERR por Linea de Negocio: archivo aparte, que el panel descarga solo
+# cuando se abre la hoja "Lineas" (no engorda la carga inicial).
+SALIDA_JSON_LINEAS = "docs/datos_lineas.json"
 
 MESES_NUM = list(range(1, 13))
 MESES_NOMBRE = {
@@ -464,6 +474,278 @@ def generar_drilldown_linea_ppto(full_ppto):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# BLOQUE 4: EERR POR LINEA DE NEGOCIO (hoja "Lineas") - REAL
+# ──────────────────────────────────────────────────────────────────────
+#
+# Van en un archivo aparte (docs/datos_lineas.json), no en el JSON principal.
+# Bloques, todos sobre la base expandida de asignar_lineas():
+#   lineas_real        linea -> periodo -> {concepto: valor}
+#   lineas_total_real  periodo -> {concepto: valor}   (suma de las lineas)
+#   lineas_drill_real  concepto -> linea -> periodo -> {clave centro: valor}
+#   lineas_centros     {clave centro: etiqueta}  ("601" -> "601 Finanzas...")
+#   lineas_prorrateo   {linea: pct}  (data/rules/prorrateo_lineas.csv)
+#   lineas_centros_prorrateados  [clave centro, ...]  (regla PRORRATEO)
+#
+# periodo = "1".."12" (igual que los demas bloques) mas "Acumulado", que
+# es la suma de los meses de meta.meses_con_real.
+#
+# REDONDEO: los valores van en pesos enteros, como el resto del JSON, pero
+# redondear cada linea por separado deja diferencias de unos pocos pesos
+# contra el consolidado. Por eso se redondea "cuadrando" (ver _cuadrar):
+# las lineas suman exactamente el consolidado del JSON, y los centros del
+# drill suman exactamente el valor de su linea. Ningun valor se mueve mas
+# de un par de pesos respecto de su valor exacto.
+
+PERIODO_ACUM = "Acumulado"
+CONCEPTOS_VALOR = [c for c, _, tipo in ESTRUCTURA_EERR if tipo != "porcentaje"]
+
+# Diferencia maxima aceptable (pesos) entre la suma exacta de las partes y
+# el total al que se cuadran. Algo mayor significa que las partes no
+# representan al total (p. ej. filas en una linea que no se esta sumando).
+_TOLERANCIA_CUADRE = 2.0
+
+
+def _porcentajes(ingresos, margen, ebitda, ebitda_empresa):
+    """Los 3 porcentajes del EERR, con el mismo criterio que el grid."""
+    return {
+        "% Margen": round(margen / ingresos * 100, 2) if ingresos else None,
+        "% EBITDA": round(ebitda / ingresos * 100, 2) if ingresos else None,
+        "% EBITDA Empresa": (
+            round(ebitda_empresa / ingresos * 100, 2) if ingresos else None
+        ),
+    }
+
+
+def _cuadrar(exactos, objetivo, contexto):
+    """
+    Redondea a pesos enteros un grupo de valores de modo que sumen
+    exactamente `objetivo` (metodo del mayor resto): cada valor se
+    redondea normalmente y los pesos que sobran o faltan se asignan, de a
+    uno, a los valores que quedaron mas lejos de su redondeo.
+
+    exactos: {clave: valor exacto}. objetivo: total entero ya publicado.
+    Lanza ValueError si las partes no suman el objetivo (mas alla del
+    redondeo): eso es un error de datos, no algo que corregir aqui.
+    """
+    desvio = sum(exactos.values()) - objetivo
+    if abs(desvio) > _TOLERANCIA_CUADRE:
+        raise ValueError(
+            f"EERR por linea: las partes no suman el total en {contexto} "
+            f"(suma={sum(exactos.values()):,.2f}, total={objetivo:,}, "
+            f"diferencia={desvio:,.2f})."
+        )
+
+    redondeados = {k: round(v) for k, v in exactos.items()}
+    falta = objetivo - sum(redondeados.values())
+    if falta == 0:
+        return redondeados
+    if not redondeados:
+        raise ValueError(
+            f"EERR por linea: total {objetivo:,} sin partes en {contexto}."
+        )
+
+    paso = 1 if falta > 0 else -1
+    # Primero los valores con monto (no crear un peso donde habia cero) y,
+    # entre ellos, los que el redondeo dejo mas lejos en el sentido del ajuste.
+    orden = sorted(
+        exactos,
+        key=lambda k: (exactos[k] == 0, -paso * (exactos[k] - redondeados[k])),
+    )
+    i = 0
+    while falta != 0:
+        redondeados[orden[i % len(orden)]] += paso
+        falta -= paso
+        i += 1
+    return redondeados
+
+
+def lineas_del_bloque(exp):
+    """
+    Lineas de Reporte que van en los bloques: las de las reglas (en el
+    orden de prorrateo_lineas.csv) y, solo si hay filas sin regla de
+    centro de costo, tambien "Sin asignar" (asi la suma sigue calzando
+    con el consolidado y el problema queda a la vista).
+    """
+    lineas = lineas_reporte()
+    if (exp["Linea_Reporte"] == SIN_ASIGNAR).any():
+        print(f"  ATENCION: hay filas en la linea '{SIN_ASIGNAR}' (centro de "
+              "costo sin regla). Correr detectar_cuentas_nuevas.py y "
+              "completar data/rules/centro_linea.csv.")
+        lineas = lineas + [SIN_ASIGNAR]
+    return lineas
+
+
+def generar_lineas_real(exp, grid_real, meses_con_real, lineas):
+    """
+    linea -> periodo -> {concepto: valor}. Misma forma que grid_real[alcance]
+    mas el periodo "Acumulado".
+
+    Cada valor sale de calcular_eerr(..., lineas=[linea]) sobre la base
+    expandida. La linea MMQ queda PONDERADA igual que en el consolidado
+    (factor 0.75/0.875 sobre el diario MMQ; el centro 205 de GEMCO al 100%).
+    """
+    # Subconjunto por linea, para no filtrar la base completa en cada llamada
+    exp_por_linea = {l: exp[exp["Linea_Reporte"] == l] for l in lineas}
+
+    resultado = {l: {} for l in lineas}
+    for mes in MESES_NUM:
+        exactos = {
+            l: calcular_eerr(exp_por_linea[l], mes=mes, lineas=[l])
+            for l in lineas
+        }
+        fila = {l: {} for l in lineas}
+        for concepto in CONCEPTOS_VALOR:
+            cuadrado = _cuadrar(
+                {l: exactos[l][KEY_REAL[concepto]] for l in lineas},
+                grid_real["Consolidado"][str(mes)][concepto],
+                f"{concepto}, mes {mes} (lineas vs consolidado)",
+            )
+            for l in lineas:
+                fila[l][concepto] = cuadrado[l]
+        for l in lineas:
+            r = exactos[l]
+            fila[l].update(_porcentajes(
+                r["Ingresos"], r["Margen Bruto"],
+                r["EBITDA Directo"], r["EBITDA Empresa"],
+            ))
+            resultado[l][str(mes)] = fila[l]
+
+    for l in lineas:
+        acum = {
+            concepto: sum(resultado[l][str(m)][concepto] for m in meses_con_real)
+            for concepto in CONCEPTOS_VALOR
+        }
+        acum.update(_porcentajes(
+            acum["Ingresos"], acum["Margen Bruto"],
+            acum["EBITDA Directo"], acum["EBITDA Empresa"],
+        ))
+        resultado[l][PERIODO_ACUM] = acum
+    return resultado
+
+
+def generar_lineas_total_real(lineas_real):
+    """periodo -> {concepto: valor}: suma de todas las lineas. Es el
+    control de la hoja "Lineas": debe ser igual al consolidado."""
+    resultado = {}
+    periodos = list(next(iter(lineas_real.values())).keys())
+    for periodo in periodos:
+        total = {
+            concepto: sum(por_periodo[periodo][concepto]
+                          for por_periodo in lineas_real.values())
+            for concepto in CONCEPTOS_VALOR
+        }
+        total.update(_porcentajes(
+            total["Ingresos"], total["Margen Bruto"],
+            total["EBITDA Directo"], total["EBITDA Empresa"],
+        ))
+        resultado[periodo] = total
+    return resultado
+
+
+def _centros_origen(exp):
+    """
+    Centro de origen de cada fila de la base expandida.
+
+    Retorna (clave, catalogo):
+    - clave: Series con la clave corta del centro por fila. Diario GEMCO:
+      el codigo del centro de costo ("601"). Diarios propios: la empresa
+      ("Incardia", "MMQ", "Tecservice").
+    - catalogo: {clave: etiqueta para mostrar}, p. ej.
+      {"601": "601 Finanzas y Contabilidad", "Incardia": "Incardia"}.
+    """
+    es_propio = exp["Empresa"].isin(LINEA_POR_EMPRESA)
+    cod = exp["Cod_Unidad"].astype("string").fillna("s/c").astype(object)
+    clave = exp["Empresa"].where(es_propio, cod).astype(object)
+
+    catalogo = {}
+    if "Nombre Unidad" in exp.columns:
+        nombre = exp["Nombre Unidad"].fillna("").astype(str).str.strip()
+        # Un solo nombre por codigo (el mas frecuente), por si el Diario
+        # trae el mismo centro escrito de dos formas.
+        canonico = nombre[~es_propio].groupby(cod[~es_propio]).agg(
+            lambda s: s.value_counts().index[0]
+        )
+        catalogo = {c: f"{c} {n}".strip() for c, n in canonico.items()}
+    for c in sorted(cod[~es_propio].unique()):
+        catalogo.setdefault(c, c)
+    catalogo = dict(sorted(catalogo.items()))
+    for empresa in sorted(exp.loc[es_propio, "Empresa"].unique()):
+        catalogo[empresa] = empresa
+    return clave, catalogo
+
+
+def generar_lineas_drill_real(exp, lineas_real, meses_con_real, lineas):
+    """
+    Retorna (drill, centros):
+      drill:   concepto -> linea -> periodo -> {clave de centro: valor}
+      centros: {clave de centro: etiqueta}  (bloque "lineas_centros")
+
+    Desglosa cada valor de lineas_real por centro de origen, incluidas las
+    filas que llegan por prorrateo (con su centro original). La suma de
+    los centros es exactamente el valor de la linea.
+
+    FORMATO COMPACTO (para no inflar el JSON, sin perder trazabilidad):
+    - Los centros van por su clave corta ("601"); codigo y nombre estan
+      una sola vez en `centros` ("601" -> "601 Finanzas y Contabilidad").
+    - Se omiten los centros con valor 0.
+    """
+    clave_centro, centros = _centros_origen(exp)
+    df = exp.assign(_centro=clave_centro, _mes=exp["Fecha"].dt.month)
+    df = df[df["Linea_Reporte"].isin(lineas)]
+
+    # (linea, mes) -> {centro: resultado de calcular_eerr}
+    exactos = {}
+    for (linea, mes, centro), grupo in df.groupby(
+            ["Linea_Reporte", "_mes", "_centro"], sort=True):
+        exactos.setdefault((linea, int(mes)), {})[centro] = calcular_eerr(
+            grupo, mes=int(mes)
+        )
+
+    resultado = {}
+    for concepto in CONCEPTOS_VALOR:
+        clave = KEY_REAL[concepto]
+        resultado[concepto] = {}
+        for linea in lineas:
+            por_periodo = {}
+            for mes in MESES_NUM:
+                por_centro = {
+                    centro: r[clave]
+                    for centro, r in exactos.get((linea, mes), {}).items()
+                    if r[clave] != 0
+                }
+                cuadrado = _cuadrar(
+                    por_centro,
+                    lineas_real[linea][str(mes)][concepto],
+                    f"{concepto}, {linea}, mes {mes} (centros vs linea)",
+                )
+                por_periodo[str(mes)] = {c: v for c, v in cuadrado.items() if v != 0}
+
+            acum = {}
+            for mes in meses_con_real:
+                for centro, v in por_periodo[str(mes)].items():
+                    acum[centro] = acum.get(centro, 0) + v
+            por_periodo[PERIODO_ACUM] = {
+                c: acum[c] for c in sorted(acum) if acum[c] != 0
+            }
+            resultado[concepto][linea] = por_periodo
+    return resultado, centros
+
+
+def generar_reglas_prorrateo():
+    """
+    Retorna (prorrateo, centros_prorrateados) para mostrar en la hoja:
+      prorrateo: {linea: pct}, tal cual data/rules/prorrateo_lineas.csv.
+      centros_prorrateados: claves de centro ("601") con regla PRORRATEO
+        en data/rules/centro_linea.csv.
+    """
+    centros = sorted(
+        str(cod) for cod, linea in cargar_centro_linea().items()
+        if linea == PRORRATEO
+    )
+    return cargar_prorrateo(), centros
+
+
+# ──────────────────────────────────────────────────────────────────────
 # MAIN
 # ──────────────────────────────────────────────────────────────────────
 
@@ -502,6 +784,16 @@ def main():
     mmq_100_real = generar_mmq_100_real(base)
     mmq_100_linea_real = generar_mmq_100_linea_real(base)
 
+    print("Generando EERR por Linea de Negocio (Real)...")
+    exp = asignar_lineas(base)
+    lineas = lineas_del_bloque(exp)
+    lineas_real = generar_lineas_real(exp, grid_real, meses_con_real, lineas)
+    lineas_total_real = generar_lineas_total_real(lineas_real)
+    lineas_drill_real, lineas_centros = generar_lineas_drill_real(
+        exp, lineas_real, meses_con_real, lineas
+    )
+    lineas_prorrateo, lineas_centros_prorrateados = generar_reglas_prorrateo()
+
     salida = {
         "meta": {
             "meses_con_real": meses_con_real,
@@ -520,12 +812,25 @@ def main():
         "mmq_100_linea_real": mmq_100_linea_real,
     }
 
+    salida_lineas = {
+        "lineas_real": lineas_real,
+        "lineas_total_real": lineas_total_real,
+        "lineas_drill_real": lineas_drill_real,
+        "lineas_centros": lineas_centros,
+        "lineas_prorrateo": lineas_prorrateo,
+        "lineas_centros_prorrateados": lineas_centros_prorrateados,
+    }
+
     Path(SALIDA_JSON).parent.mkdir(parents=True, exist_ok=True)
     with open(SALIDA_JSON, "w", encoding="utf-8") as f:
         json.dump(salida, f, ensure_ascii=False, separators=(",", ":"))
+    with open(SALIDA_JSON_LINEAS, "w", encoding="utf-8") as f:
+        json.dump(salida_lineas, f, ensure_ascii=False, separators=(",", ":"))
 
     print(f"\nListo. JSON generado en: {SALIDA_JSON}")
     print(f"Tamaño: {Path(SALIDA_JSON).stat().st_size / 1024:.1f} KB")
+    print(f"JSON de lineas generado en: {SALIDA_JSON_LINEAS}")
+    print(f"Tamaño: {Path(SALIDA_JSON_LINEAS).stat().st_size / 1024:.1f} KB")
 
 
 if __name__ == "__main__":

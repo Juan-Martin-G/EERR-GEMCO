@@ -283,6 +283,19 @@ def limpiar_gemco(df_raw: pd.DataFrame) -> pd.DataFrame:
 
     df["Empresa"] = "GEMCO"
 
+    # Codigo numerico de centro de costo (columna "Unidad de Negocio" del
+    # Diario: 101, 201, 601...). Se conserva como entero para asignar la
+    # Linea de Reporte en transformacion/lineas.py. Int64 (nullable) para
+    # que un codigo vacio/no numerico quede como <NA> en vez de romper la
+    # carga: esas filas caen en "Sin asignar" y las detecta el test.
+    if "Unidad de Negocio" in df.columns:
+        df["Cod_Unidad"] = (
+            pd.to_numeric(df["Unidad de Negocio"], errors="coerce")
+            .round().astype("Int64")
+        )
+    else:
+        df["Cod_Unidad"] = pd.array([pd.NA] * len(df), dtype="Int64")
+
     # Linea_Negocio desde Nombre Unidad
     _mapa_linea = {
         "E. Esterilización": "Equipos Esterilización",
@@ -362,7 +375,7 @@ def _columnas_estandar(df: pd.DataFrame) -> pd.DataFrame:
         "Empresa", "Empresa_Comercial", "Linea_Negocio", "GAV",
     ]
     # Agregar columnas opcionales si existen
-    for col in ["UNIDAD 2", "Tipo de Gasto", "Nombre Unidad"]:
+    for col in ["UNIDAD 2", "Tipo de Gasto", "Nombre Unidad", "Cod_Unidad"]:
         if col in df.columns:
             cols.append(col)
     return df[[c for c in cols if c in df.columns]].reset_index(drop=True)

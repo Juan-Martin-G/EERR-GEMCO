@@ -95,7 +95,8 @@ def _presentacion(suma_raw: float) -> float:
 def calcular_eerr(df: pd.DataFrame,
                   mes: int | None = None,
                   empresas: list | None = None,
-                  factor_mmq_forzado: bool | None = None) -> dict:
+                  factor_mmq_forzado: bool | None = None,
+                  lineas: list | None = None) -> dict:
     """
     Calcula el EERR consolidado desde el DataFrame base.
 
@@ -107,8 +108,20 @@ def calcular_eerr(df: pd.DataFrame,
             criterio automatico de mas abajo (usado por generar_datos.py
             para precalcular AMBAS variantes de MMQ - 100% y ponderada -
             aunque en ambos casos se llame con empresas=["MMQ"]).
+        lineas: Lista de Lineas de Reporte a incluir (EERR por Linea de
+            Negocio). Requiere que df sea la base EXPANDIDA que devuelve
+            transformacion.lineas.asignar_lineas (columna Linea_Reporte).
+            None (o lista vacia) = sin filtro: resultado identico al
+            consolidado de siempre.
 
     Retorna dict con cada línea del EERR en pesos (CLP).
+
+    NOTA sobre lineas: el filtro solo selecciona filas; las reglas de
+    signo, GAV y factor MMQ siguen dependiendo de Empresa_Comercial. Por
+    eso la linea "MMQ" muestra el diario MMQ PONDERADO (0.75/0.875), mas
+    las filas de GEMCO del centro 205, que van al 100% por ser
+    Empresa_Comercial GEMCO. Asi la suma de todas las lineas calza con el
+    consolidado.
 
     NOTA sobre MMQ: el factor 0.75/0.875 representa la participación de
     GEMCO en MMQ. Si MMQ es la UNICA empresa seleccionada (empresas ==
@@ -132,6 +145,16 @@ def calcular_eerr(df: pd.DataFrame,
             else:
                 todas_ec.add(e)
         df = df[df["Empresa_Comercial"].isin(todas_ec)].copy()
+
+    # Filtro de lineas de reporte (solo sobre la base expandida)
+    if lineas:
+        if "Linea_Reporte" not in df.columns:
+            raise ValueError(
+                "El parámetro 'lineas' requiere la base expandida de "
+                "transformacion.lineas.asignar_lineas (falta la columna "
+                "'Linea_Reporte')."
+            )
+        df = df[df["Linea_Reporte"].isin(list(lineas))].copy()
 
     # Filtro de mes
     df_mes = df.copy()

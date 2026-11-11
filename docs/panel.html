@@ -49,17 +49,27 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 
 /* ── Main content ────────────────────────────────────────────────── */
 #main{flex:1;min-height:0;overflow:hidden;position:relative}
-#view-eerr,#view-graf{height:100%}
+#view-eerr,#view-graf,#view-lineas{height:100%}
 
-/* ── Table ───────────────────────────────────────────────────────── */
+/* ── Table (hoja EERR y hoja Líneas comparten estilos) ───────────── */
 #tbl-cont{height:100%;overflow:auto}
-#eerr-tbl{border-collapse:collapse;white-space:nowrap;font-size:12px}
-#eerr-tbl th,#eerr-tbl td{border:1px solid #d8dde4;padding:3px 8px}
+/* Hoja Líneas: el texto del período queda fijo sobre la tabla, que ocupa
+   el resto del alto. */
+#view-lineas{display:flex;flex-direction:column}
+#lin-cont{flex:1;min-height:0;overflow:auto}
+#lin-periodo{flex-shrink:0;padding:6px 14px;background:var(--wh);
+  border-bottom:1px solid var(--brd);font-size:12px;font-weight:700;color:var(--az)}
+#eerr-tbl,#lin-tbl{border-collapse:collapse;white-space:nowrap;font-size:12px}
+#eerr-tbl th,#eerr-tbl td,
+#lin-tbl th,#lin-tbl td{border:1px solid #d8dde4;padding:3px 8px}
 
 /* Sticky header rows */
-#eerr-tbl thead tr:first-child th{
+#eerr-tbl thead tr:first-child th,
+#lin-tbl thead tr:first-child th{
   position:sticky;top:0;z-index:4;
   background:var(--az2);color:#fff;text-align:center;font-weight:700;height:var(--th1)}
+/* Segunda fila de encabezado: solo la hoja EERR. La hoja Líneas tiene una
+   sola fila, asi que no debe heredar este offset (quedaria un hueco). */
 #eerr-tbl thead tr:last-child th{
   position:sticky;top:var(--th1);z-index:4;
   background:#2a4f6a;color:#d4e8f0;text-align:center;font-size:11px;font-weight:600}
@@ -69,7 +79,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 
 /* Sticky left column */
 .sticky-l{position:sticky;left:0;z-index:3}
-#eerr-tbl thead tr:first-child th.sticky-l{z-index:6}
+#eerr-tbl thead tr:first-child th.sticky-l,
+#lin-tbl thead tr:first-child th.sticky-l{z-index:6}
 #eerr-tbl thead tr:last-child th.sticky-l{z-index:5}
 
 /* Body rows */
@@ -98,6 +109,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
    el texto de las columnas que pasan por debajo. El outline lo pinta la
    propia celda, asi que se mueve con ella y tapa esa franja. */
 #eerr-tbl tbody td.sticky-l,
+#lin-tbl tbody td.sticky-l,
 #rt-tbl tbody td.sticky-l{outline:1px solid #d8dde4;outline-offset:-1px}
 
 /* Concepto cells */
@@ -165,6 +177,14 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 .rt-var-bad{color:#c0432a;font-weight:700}
 .rt-var-good{color:#2f8a72;font-weight:700}
 
+/* ── Líneas (EERR por Línea de Negocio) ─────────────────────────────
+   La tabla usa los mismos estilos que #eerr-tbl (ver arriba). */
+.lin-msg{padding:28px 14px;font-size:13px;color:var(--mut);line-height:1.6}
+.lin-msg.err{color:var(--neg)}
+.lin-msg small{display:block;font-size:12px;color:var(--mut)}
+.lin-nota{position:sticky;left:0;max-width:940px;padding:10px 14px 18px;
+  font-size:11px;color:var(--mut);line-height:1.5;white-space:normal}
+
 /* ── Loading ──────────────────────────────────────────────────────── */
 #loading{display:flex;flex-direction:column;align-items:center;justify-content:center;
   height:100vh;gap:12px;color:var(--mut);font-size:15px}
@@ -184,15 +204,28 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
       <button class="nav-btn active" data-hoja="eerr" onclick="setHoja('eerr')">📊 EERR</button>
       <button class="nav-btn" data-hoja="graficos" onclick="setHoja('graficos')">📈 Gráficos</button>
       <button class="nav-btn" data-hoja="ratios" onclick="setHoja('ratios')">📐 Ratios</button>
+      <button class="nav-btn" data-hoja="lineas" onclick="setHoja('lineas')">📋 Líneas</button>
     </div>
     <div id="sel-row">
-      <div class="sel-grp">
+      <div class="sel-grp" id="sel-grp-meses">
         <span class="sel-lbl">Mes</span>
         <div class="btn-grp" id="sel-meses"></div>
       </div>
-      <div class="sel-grp">
+      <div class="sel-grp" id="sel-grp-empresa">
         <span class="sel-lbl">Empresa</span>
         <div class="btn-grp" id="sel-empresa"></div>
+      </div>
+      <!-- Hoja Líneas: meses a sumar (selección múltiple, solo meses con Real);
+           la selección es la misma para todas las columnas -->
+      <div class="sel-grp" id="sel-lineas-ctrl" style="display:none">
+        <span class="sel-lbl">Mes</span>
+        <div class="btn-grp" id="sel-meses-lin"></div>
+        <div class="btn-grp">
+          <button class="sel-btn" id="btn-lin-todos" onclick="linSelTodos()">Todos</button>
+          <button class="sel-btn" id="btn-lin-limpiar" onclick="linSelLimpiar()">Limpiar</button>
+        </div>
+        <span class="sel-lbl">Escala</span>
+        <button class="sel-btn" id="btn-mm-lin" onclick="toggleMM()">MM$</button>
       </div>
       <div class="sel-grp" id="sel-eerr-ctrl">
         <span class="sel-lbl">Variación</span>
@@ -304,6 +337,19 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 
       </div><!-- /.rt-wrap -->
     </div><!-- /#view-ratios -->
+
+    <!-- LINEAS VIEW (EERR por Línea de Negocio; datos en datos_lineas.json) -->
+    <div id="view-lineas" style="display:none">
+      <div id="lin-periodo"><span class="sel-lbl">Período</span> <span id="lin-periodo-txt"></span></div>
+      <div id="lin-cont">
+        <div id="lin-msg" class="lin-msg"></div>
+        <table id="lin-tbl" style="display:none">
+          <thead id="lin-thead"></thead>
+          <tbody id="lin-tbody"></tbody>
+        </table>
+        <p id="lin-nota" class="lin-nota" style="display:none"><span id="lin-nota-periodo"></span>Los centros 601–611, 206 y 104 se prorratean con porcentajes fijos. MMQ se muestra ponderado por el factor de participación (0,75 / 0,875). La depreciación de cada línea es la contable; no incluye la reasignación de D&amp;A de gestión del Excel.</p>
+      </div>
+    </div><!-- /#view-lineas -->
 
   </div><!-- /#main -->
 </div><!-- /#app -->
