@@ -47,6 +47,7 @@ LINEAS = [
 BLOQUES_LINEAS = {
     "lineas_real", "lineas_total_real", "lineas_drill_real", "lineas_centros",
     "lineas_prorrateo", "lineas_centros_prorrateados",
+    "curvas_j",   # hoja "Curvas J": ver tests/test_curvas_j.py
 }
 
 

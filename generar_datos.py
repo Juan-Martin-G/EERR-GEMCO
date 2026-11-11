@@ -13,8 +13,8 @@ USO: correr este script cada vez que se actualicen los datos fuente
 Genera: docs/datos_eerr.json (ajustar ruta de salida segun la estructura
 del repo que se use en GitHub Pages - 'docs/' es la convencion mas comun
 para servir GitHub Pages desde una subcarpeta del repo principal).
-Genera tambien docs/datos_lineas.json (EERR por Linea de Negocio), que el
-panel descarga solo al abrir la hoja "Lineas".
+Genera tambien docs/datos_lineas.json (EERR por Linea de Negocio y Curvas
+J), que el panel descarga solo al abrir la hoja "Lineas" o "Curvas J".
 
 Reutiliza EXACTAMENTE la misma logica ya validada en:
   - transformacion/diarios.py
@@ -22,6 +22,7 @@ Reutiliza EXACTAMENTE la misma logica ya validada en:
   - transformacion/lineas.py   (EERR por Linea de Negocio)
   - calculo/eerr.py
   - calculo/eerr_presupuesto.py
+  - calculo/curvas_j.py        (Curvas J: Real vs Presupuesto por linea)
 No reimplementa ninguna regla de negocio - solo orquesta y serializa.
 """
 
@@ -40,6 +41,9 @@ from transformacion.lineas import (
 )
 from calculo.eerr import calcular_eerr
 from calculo.eerr_presupuesto import calcular_eerr_ppto
+from calculo.curvas_j import (
+    leer_presupuesto, construir_curvas_j, controlar_curvas_j, CONCEPTO_REAL,
+)
 
 # ──────────────────────────────────────────────────────────────────────
 # CONFIGURACION
@@ -746,6 +750,38 @@ def generar_reglas_prorrateo():
 
 
 # ──────────────────────────────────────────────────────────────────────
+# BLOQUE 5: CURVAS J (hoja "Curvas J") - REAL vs PRESUPUESTO POR LINEA
+# ──────────────────────────────────────────────────────────────────────
+#
+# Bloque "curvas_j" de docs/datos_lineas.json: Resultado del Ejercicio
+# MENSUAL por linea, Presupuesto (12 meses) y Real (meses con Real), en
+# pesos. Los acumulados los calcula el panel. Toda la logica esta en
+# calculo/curvas_j.py; aqui solo se le entregan los bloques ya generados.
+
+def generar_curvas_j(archivo_ppto, lineas_real, grid_real, grid_ppto,
+                     meses_con_real):
+    """
+    Retorna (curvas_j, controles). Lanza ValueError (y no se escribe
+    ningun JSON) si falla alguno de los controles de calculo/curvas_j.py.
+    """
+    ppto = leer_presupuesto(archivo_ppto)
+    curvas_j = construir_curvas_j(ppto["lineas"], lineas_real, meses_con_real)
+    controles = controlar_curvas_j(
+        curvas_j,
+        ppto_consolidado={
+            m: grid_ppto["Consolidado"][m][CONCEPTO_REAL]
+            for m in curvas_j["meses"]
+        },
+        tecservice_consolidado=ppto["tecservice_consolidado"],
+        real_consolidado={
+            m: grid_real["Consolidado"][m][CONCEPTO_REAL]
+            for m in curvas_j["meses"]
+        },
+    )
+    return curvas_j, controles
+
+
+# ──────────────────────────────────────────────────────────────────────
 # MAIN
 # ──────────────────────────────────────────────────────────────────────
 
@@ -794,6 +830,18 @@ def main():
     )
     lineas_prorrateo, lineas_centros_prorrateados = generar_reglas_prorrateo()
 
+    print("Generando Curvas J (Resultado del Ejercicio, Real vs Presupuesto)...")
+    curvas_j, controles_cj = generar_curvas_j(
+        ARCHIVO_PPTO, lineas_real, grid_real, grid_ppto, meses_con_real
+    )
+    print("  Controles (diferencia maxima observada, en pesos):")
+    print(f"    Presupuesto 8 lineas vs consolidado, por mes : "
+          f"{controles_cj['ppto_vs_consolidado']:,.0f}")
+    print(f"    TECSERVICE anual vs 'TECSERVICE Consolidado' : "
+          f"{controles_cj['tecservice_vs_pln']:,.0f}")
+    print(f"    Real 8 lineas + excluidas vs consolidado     : "
+          f"{controles_cj['real_vs_consolidado']:,.0f}")
+
     salida = {
         "meta": {
             "meses_con_real": meses_con_real,
@@ -819,6 +867,7 @@ def main():
         "lineas_centros": lineas_centros,
         "lineas_prorrateo": lineas_prorrateo,
         "lineas_centros_prorrateados": lineas_centros_prorrateados,
+        "curvas_j": curvas_j,
     }
 
     Path(SALIDA_JSON).parent.mkdir(parents=True, exist_ok=True)

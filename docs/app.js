@@ -67,6 +67,9 @@ let linCarga   = null;       // descarga en curso (Promise)
 let linMeses   = new Set();  // meses a sumar (solo meses con Real); al iniciar, todos
 let exLin      = new Set();  // conceptos expandidos (drill por centro de origen)
 
+// Estado hoja Curvas J (usa el mismo datos_lineas.json, bloque curvas_j)
+let cjCharts   = [];         // instancias Chart.js, una por línea
+
 // ═══════════════════════════════════════════════════════════════════
 //  FETCH Y ARRANQUE
 // ═══════════════════════════════════════════════════════════════════
@@ -109,15 +112,20 @@ function setHoja(h) {
   document.getElementById('view-graf').style.display     = h === 'graficos' ? '' : 'none';
   document.getElementById('view-ratios').style.display   = h === 'ratios'   ? '' : 'none';
   document.getElementById('view-lineas').style.display   = h === 'lineas'   ? '' : 'none';
+  document.getElementById('view-curvas').style.display   = h === 'curvas'   ? '' : 'none';
   document.getElementById('sel-eerr-ctrl').style.display = h === 'eerr'     ? '' : 'none';
   // La hoja Líneas tiene su propio selector de meses (solo meses con Real,
   // la misma selección para todas las columnas) y no usa el de Empresa.
+  // La hoja Curvas J no tiene selectores: se oculta la fila completa.
+  const sinMesEmpresa = h === 'lineas' || h === 'curvas';
   document.getElementById('sel-lineas-ctrl').style.display = h === 'lineas' ? '' : 'none';
-  document.getElementById('sel-grp-meses').style.display   = h === 'lineas' ? 'none' : '';
-  document.getElementById('sel-grp-empresa').style.display = h === 'lineas' ? 'none' : '';
+  document.getElementById('sel-grp-meses').style.display   = sinMesEmpresa ? 'none' : '';
+  document.getElementById('sel-grp-empresa').style.display = sinMesEmpresa ? 'none' : '';
+  document.getElementById('sel-row').style.display         = h === 'curvas' ? 'none' : '';
   if (h === 'graficos') renderGraf();
   if (h === 'ratios')   renderRatios();
   if (h === 'lineas')   abrirLineas();
+  if (h === 'curvas')   abrirCurvas();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1192,6 +1200,203 @@ function handleDrillLin(e) {
   const c = btn.dataset.c;
   if (exLin.has(c)) exLin.delete(c); else exLin.add(c);
   linRebuildBody();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CURVAS J — RESULTADO DEL EJERCICIO ACUMULADO, REAL vs PRESUPUESTO
+// ═══════════════════════════════════════════════════════════════════
+// Un gráfico por línea (Total GEMCO + 8 líneas). Los datos vienen en el
+// bloque curvas_j de datos_lineas.json (generar_datos.py), que trae solo
+// valores MENSUALES en pesos: los acumulados se calculan aquí. Se usa el
+// mismo archivo y la misma descarga que la hoja Líneas (cargarLineas), así
+// que nunca se baja dos veces.
+//
+// Presupuesto: 12 meses. Real: de enero al último mes con Real (la curva
+// termina ahí). Sin selectores: la interacción es pasar el mouse.
+
+const CJ_MENOS = '−';   // signo menos tipográfico
+
+// Número ya en millones -> "1.234,5" (1 decimal, formato del panel).
+// conSigno: antepone "+" a los positivos (para la brecha).
+function cjNum(millones, conSigno) {
+  const m = Math.round(millones * 10) / 10;
+  return (m < 0 ? CJ_MENOS : (conSigno && m > 0 ? '+' : '')) + fMM1(Math.abs(m));
+}
+// Valor en pesos -> texto en M$.
+function cjM(pesos, conSigno) { return cjNum(pesos / 1e6, conSigno); }
+
+// Cumplimiento = Real acumulado / Presupuesto acumulado. Solo tiene lectura
+// si el presupuesto acumulado es positivo; si no, "n/a".
+function cjCumplimiento(realAc, pptoAc) {
+  if (!(pptoAc > 0)) return 'n/a';
+  const p = Math.round(realAc / pptoAc * 100);
+  return (p < 0 ? CJ_MENOS : '') + fI(p) + '%';
+}
+
+// id estable del canvas: "Equipos Esterilización" -> "curva-equipos-esterilizacion"
+function cjId(nombre) {
+  return 'curva-' + nombre.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+// Series de una línea: mensuales (del JSON) y acumuladas (calculadas aquí).
+function cjSerie(nombre) {
+  const b = LIN.curvas_j.lineas[nombre];
+  const acum = a => { let s = 0; return a.map(v => (s += v)); };
+  return {
+    ppto: b.ppto_mensual, real: b.real_mensual,
+    pptoAc: acum(b.ppto_mensual), realAc: acum(b.real_mensual),
+  };
+}
+
+// Líneas del tooltip para el mes de índice i (0 = enero). En los meses sin
+// Real solo se muestra el Presupuesto.
+function cjTooltip(s, i) {
+  const hayReal = i < s.real.length;
+  const out = [];
+  if (hayReal) out.push(`Real del mes: ${cjM(s.real[i])} M$`);
+  out.push(`Ppto del mes: ${cjM(s.ppto[i])} M$`);
+  if (hayReal) out.push(`Real acum: ${cjM(s.realAc[i])} M$`);
+  out.push(`Ppto acum: ${cjM(s.pptoAc[i])} M$`);
+  if (hayReal) {
+    out.push(`Brecha acum: ${cjM(s.realAc[i] - s.pptoAc[i], true)} M$`);
+    out.push(`Cumplimiento: ${cjCumplimiento(s.realAc[i], s.pptoAc[i])}`);
+  }
+  return out;
+}
+
+function cjMensaje(html, esError) {
+  const msg = document.getElementById('cj-msg');
+  msg.className = 'lin-msg' + (esError ? ' err' : '');
+  msg.innerHTML = html;
+  msg.style.display = '';
+  document.getElementById('cj-cont').style.display = 'none';
+}
+
+function abrirCurvas() {
+  if (LIN) { renderCurvas(); return; }
+  cjMensaje('Cargando curvas J…', false);
+  cargarLineas()
+    .then(() => { if (hojaA === 'curvas') renderCurvas(); })
+    .catch(e => cjMensaje(
+      `No se pudieron cargar los datos de la hoja Curvas J (datos_lineas.json): ${esc(e.message)}.` +
+      `<small>El resto del panel sigue funcionando. Vuelve a abrir esta pestaña para ` +
+      `reintentar; si el problema continúa, hay que regenerar y publicar el archivo ` +
+      `con generar_datos.py.</small>`, true));
+}
+
+function cjChart(canvas, cj, s) {
+  const cero = ctx => ctx.tick && ctx.tick.value === 0;
+  return new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: cj.meses.map(m => ABR[+m]),
+      datasets: [
+        { label: 'Real', data: s.realAc.map(v => v / 1e6),
+          borderColor: CR, backgroundColor: CR, borderWidth: 2,
+          pointRadius: 3, pointHoverRadius: 5,
+          cubicInterpolationMode: 'monotone', fill: false },
+        { label: 'Presupuesto', data: s.pptoAc.map(v => v / 1e6),
+          borderColor: CP, backgroundColor: CP, borderWidth: 2, borderDash: [5, 4],
+          pointRadius: 0, pointHoverRadius: 4,
+          cubicInterpolationMode: 'monotone', fill: false },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          displayColors: false,
+          callbacks: {
+            title: items => DATA.meses_nombre[cj.meses[items[0].dataIndex]],
+            label: () => null,
+            beforeBody: items => cjTooltip(s, items[0].dataIndex),
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 0 } },
+        y: {
+          beginAtZero: true,   // la línea de cero siempre queda dentro del eje
+          grid: { color: ctx => cero(ctx) ? '#6b7280' : '#edf0f7',
+                  lineWidth: ctx => cero(ctx) ? 1.4 : 1 },
+          ticks: { maxTicksLimit: 6, font: { size: 10 }, callback: v => cjNum(v) }
+        }
+      }
+    }
+  });
+}
+
+function renderCurvas() {
+  const cj = LIN.curvas_j;
+  if (!cj || !cj.lineas || !Array.isArray(cj.orden) || !Array.isArray(cj.meses)) {
+    cjMensaje('El archivo datos_lineas.json publicado no trae las curvas J.' +
+      '<small>Hay que regenerarlo y publicarlo con generar_datos.py.</small>', true);
+    return;
+  }
+  if (typeof Chart === 'undefined') {
+    cjMensaje('No se pudo cargar la librería de gráficos (Chart.js).' +
+      '<small>Revisa tu conexión a internet y recarga la página.</small>', true);
+    return;
+  }
+  document.getElementById('cj-msg').style.display  = 'none';
+  document.getElementById('cj-cont').style.display = '';
+
+  cjCharts.forEach(c => c.destroy());
+  cjCharts = [];
+  const grid = document.getElementById('cj-grid');
+  grid.innerHTML = '';
+
+  const ult    = +cj.ultimo_mes_real;
+  const mesUlt = DATA.meses_nombre[cj.ultimo_mes_real].toLowerCase();
+
+  cj.orden.forEach((nombre, i) => {
+    const s = cjSerie(nombre), n = s.real.length;
+    const card = document.createElement('div');
+    card.className = 'cj-card' + (i === 0 ? ' cj-total' : '');
+    card.dataset.linea = nombre;
+
+    const tit = document.createElement('div');
+    tit.className = 'cj-tit';
+    tit.textContent = nombre;
+
+    const sub = document.createElement('div');
+    sub.className = 'cj-sub';
+    sub.textContent = n
+      ? `${ABR[ult]}: Real ${cjM(s.realAc[n - 1])} | Ppto ${cjM(s.pptoAc[n - 1])} | ` +
+        `Brecha ${cjM(s.realAc[n - 1] - s.pptoAc[n - 1], true)} M$`
+      : 'Sin meses con Real';
+
+    const cont = document.createElement('div');
+    cont.className = 'cj-chart';
+    const canvas = document.createElement('canvas');
+    canvas.id = cjId(nombre);
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label',
+      `Curva J de ${nombre}: Resultado del Ejercicio acumulado, Real y Presupuesto. ${sub.textContent}`);
+    cont.appendChild(canvas);
+
+    card.append(tit, sub, cont);
+    grid.appendChild(card);
+    cjCharts.push(cjChart(canvas, cj, s));
+  });
+
+  // Nota al pie: el Real de las líneas sin presupuesto se informa aparte.
+  const excl = Object.entries(cj.excluido || {});
+  const exclTxt = excl.length
+    ? `; excluye ${excl.map(([l]) => l).join(' y ')} (sin presupuesto; Real acumulado a ${mesUlt}: ` +
+      `${cjM(excl.reduce((t, [, b]) => t + b.real_mensual.reduce((a, v) => a + v, 0), 0))} M$)`
+    : '';
+  document.getElementById('cj-nota').textContent =
+    'Resultado del Ejercicio acumulado, en M$. Presupuesto: PPTO V2 (Resultado del ejercicio ' +
+    'Empresa de cada hoja de línea; TECSERVICE = TECSERVICE + SS + Reas + Trazabilidad). ' +
+    'Real: según la hoja Líneas, con centros comunes prorrateados con porcentajes fijos; el ' +
+    'presupuesto reparte los costos compartidos con su propio criterio, por lo que la brecha ' +
+    'por línea incluye diferencias de reparto (el Total no se ve afectado). MMQ real ponderado ' +
+    'por participación (0,75 / 0,875). Total GEMCO = suma de las 8 líneas' + exclTxt + '. ' +
+    "Cumplimiento = Real acumulado / Presupuesto acumulado; 'n/a' si el presupuesto acumulado es ≤ 0.";
 }
 
 // ═══════════════════════════════════════════════════════════════════
