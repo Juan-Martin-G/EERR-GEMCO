@@ -16,17 +16,47 @@ const ABR = {
 const CR = '#2c5f7c', CP = '#7fb3c8', CPs = '#4a9e8c', CN = '#d97b5f';
 const CE = {GEMCO:'#2c5f7c', Incardia:'#4a9e8c', MMQ:'#8c6a2c', Tecservice:'#7f8c9c'};
 
-// Nombres completos (sin siglas) para las etiquetas de los gráficos.
-// Mismo mapeo que NOMBRES_LARGOS en app/main.py.
-const NOMBRES_LARGOS = {
-  'GPBE Directos':   'Gastos por Beneficios a los Empleados Directos',
-  'GPBE Indirectos': 'Gastos por Beneficios a los Empleados Indirectos',
-  'GPBE Total':      'Gastos por Beneficios a los Empleados Total',
-  'OGPN Directos':   'Otros Gastos por Naturaleza Directos',
-  'OGPN Indirectos': 'Otros Gastos por Naturaleza Indirectos',
-  'OGPN Total':      'Otros Gastos por Naturaleza Total',
+// Etiquetas de pantalla de los conceptos del EERR: clave interna (la de
+// los JSON y de Python, que no cambia) -> nombre completo que se muestra.
+// Es el único lugar donde se decide cómo se llama un concepto en pantalla:
+// EERR (filas y drill), Líneas (Acumulado y Detalle), Gráficos y mensajes.
+// Fuente de los nombres: filas del PPTO V2 / EERR de la V8 / mapeo_clasif.
+// "Subtotal GAV" no tiene la sigla desarrollada en ninguna fuente.
+const ETIQUETAS_CONCEPTO = {
+  'Ingresos':                        'Ingresos',
+  'Costo de ventas':                 'Costo de ventas',
+  'Margen Bruto':                    'Margen Bruto',
+  '% Margen':                        '% Margen',
+  'GPBE Directos':                   'Gastos por Beneficios a los Empleados Directos',
+  'GPBE Indirectos':                 'Gastos por Beneficios a los Empleados Indirectos',
+  'GPBE Total':                      'Gastos por Beneficios a los Empleados Total',
+  'OGPN Directos':                   'Otros Gastos por Naturaleza Directos',
+  'OGPN Indirectos':                 'Otros Gastos por Naturaleza Indirectos',
+  'OGPN Total':                      'Otros Gastos por Naturaleza Total',
+  'Subtotal GAV':                    'Subtotal GAV',
+  'EBITDA Directo':                  'EBITDA Directo',
+  '% EBITDA':                        '% EBITDA',
+  'Finiquitos':                      'Finiquitos',
+  'Multas':                          'Multas',
+  'Provisión Obsolescencias':        'Provisión Obsolescencias Inventarios',
+  'Provisión Incobrables':           'Provisión Incobrables',
+  'Provisión Habilitación Oficinas': 'Provisión Habilitación Oficinas',
+  'Gastos Adicionales':              'Gastos Adicionales',
+  'EBITDA Empresa':                  'EBITDA Empresa',
+  '% EBITDA Empresa':                '% EBITDA Empresa',
+  'Depreciación':                    'Depreciación y Amortización',
+  'Resultado Operacional':           'Resultado Operacional',
+  'Otros Ingresos por Función':      'Otros Ingresos por Función',
+  'Ingreso Financiero':              'Ingreso Financiero',
+  'Costo Financiero':                'Costo Financiero',
+  'Otros Gastos por Función':        'Otros Gastos por Función',
+  'Diferencia de Cambio':            'Diferencia de Cambio',
+  'Resultado No Operacional':        'Resultado No Operacional',
+  'Resultado antes Impuestos':       'Resultado antes de Impuestos',
+  'Impuesto a la Renta':             'Impuesto a la Renta',
+  'Resultado del Ejercicio':         'Resultado del Ejercicio',
 };
-function nombreLargo(c) { return NOMBRES_LARGOS[c] || c; }
+function etiqueta(c) { return ETIQUETAS_CONCEPTO[c] ?? c; }
 
 // Ratios Costo/Ingresos de la hoja "Ratios". Cada uno se calcula como
 // ABS(suma de conceptosCosto) / ABS(Ingresos) * 100.
@@ -439,7 +469,7 @@ function buildMainRow(c, nv, tip, isPct, hasDrill, isExp, meses, tp, ta) {
     ? `<button class="dd-btn" data-c="${esc(c)}" data-n="1">${isExp ? '−' : '+'}</button>`
     : '<span class="dd-sp"></span>';
   let row = `<tr class="${rcls}">`;
-  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(nombreLargo(c))}</td>`;
+  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(etiqueta(c))}</td>`;
   meses.forEach(m => { tp.forEach(t => { row += `<td class="td-v">${cellV(c, m, t, isPct)}</td>`; }); });
   ta.forEach(t => { row += `<td class="td-v td-acum">${cellAcum(c, t, isPct)}</td>`; });
   return row + '</tr>';
@@ -529,7 +559,7 @@ function initGrafControls() {
   DATA.estructura_eerr.forEach(([c]) => {
     const o = document.createElement('option');
     o.value = c;
-    o.textContent = nombreLargo(c);
+    o.textContent = etiqueta(c);
     sc.appendChild(o);
   });
   sc.addEventListener('change', () => buildGMain());
@@ -541,7 +571,7 @@ function initGrafControls() {
     .forEach(([c]) => {
       const o = document.createElement('option');
       o.value = c;
-      o.textContent = nombreLargo(c);
+      o.textContent = etiqueta(c);
       dc.appendChild(o);
     });
 }
@@ -666,7 +696,7 @@ function buildGMain() {
 // GAV se separa en sus 2 componentes (GPBE y OGPN) como barras flotantes
 // individuales entre Margen Bruto y EBITDA Directo.
 const WF_CONCEPTOS = ['Ingresos','Costo de ventas','Margen Bruto','GPBE Total','OGPN Total','EBITDA Directo','Gastos Adicionales','EBITDA Empresa'];
-const WF_LABELS    = WF_CONCEPTOS.map(nombreLargo); // nombres completos, sin abreviar
+const WF_LABELS    = WF_CONCEPTOS.map(etiqueta); // nombres completos, sin abreviar
 const WF_ES_TOTAL  = [false, false, true, false, false, true, false, true];
 
 // Parte una etiqueta larga en varias líneas (por palabra) para que el
@@ -1272,10 +1302,11 @@ function linMainRow(c, nv, tip, cols, hasDrill, isExp, conMarca) {
   const ddb   = hasDrill
     ? `<button class="dd-btn" data-c="${esc(c)}">${isExp ? '−' : '+'}</button>`
     : '<span class="dd-sp"></span>';
+  // &nbsp;: la † no baja sola a otra línea cuando el nombre se parte
   const marca = conMarca && MARCA_REPARTO.has(c)
-    ? ` <span class="lin-rep" title="${esc(MARCA_REPARTO_TXT)}">†</span>` : '';
+    ? `&nbsp;<span class="lin-rep" title="${esc(MARCA_REPARTO_TXT)}">†</span>` : '';
   let row = `<tr class="${rcls}" data-c="${esc(c)}">`;
-  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(nombreLargo(c))}${marca}</td>`;
+  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(etiqueta(c))}${marca}</td>`;
   cols.forEach(col => {
     row += `<td class="td-v${col.total ? ' td-acum' : ''}">${col.texto(c)}</td>`;
   });
@@ -1314,7 +1345,7 @@ function linControlRow(cols) {
   // El detalle "No cuadra" es el de la última columna con control: el Total.
   const malos = malosDe(difsDe([...cols].reverse().find(col => col.control).control));
   const det   = malos.length
-    ? `<br><span class="rt-var-bad">No cuadra: ${malos.map(([c, d]) => `${esc(c)} ${fmt(d, false)}`).join('; ')}</span>`
+    ? `<br><span class="rt-var-bad">No cuadra: ${malos.map(([c, d]) => `${esc(etiqueta(c))} ${fmt(d, false)}`).join('; ')}</span>`
     : '';
   let row = `<tr class="row-sub" id="lin-control">`;
   row += `<td class="td-c sticky-l conc-n0"><span class="dd-sp"></span>Total líneas − Consolidado (mayor diferencia, en pesos)${det}</td>`;

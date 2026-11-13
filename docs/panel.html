@@ -130,6 +130,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 .td-c{text-align:left;min-width:210px;max-width:280px;white-space:normal}
 .conc-n0{padding-left:8px}
 .conc-n1{padding-left:26px}
+/* Sangria colgante del ancho del boton +/− (19px) en las filas de concepto:
+   si un nombre largo se parte en dos lineas, la segunda queda alineada con
+   el texto y no bajo el boton. El boton sigue donde estaba (8px). */
+#eerr-tbl td.conc-n0,#eerr-tbl td.conc-n1,
+#lin-tbl td.conc-n0,#lin-tbl td.conc-n1{padding-left:27px;text-indent:-19px}
+.dd-btn{text-indent:0}
 .conc-emp{padding-left:32px}
 .conc-lin{padding-left:50px;font-size:11px}
 
