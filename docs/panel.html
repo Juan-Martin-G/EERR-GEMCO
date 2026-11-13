@@ -80,9 +80,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 #lin-tbl thead tr:first-child th{
   position:sticky;top:0;z-index:4;
   background:var(--az2);color:#fff;text-align:center;font-weight:700;height:var(--th1)}
-/* Segunda fila de encabezado: solo la hoja EERR. La hoja Líneas tiene una
-   sola fila, asi que no debe heredar este offset (quedaria un hueco). */
-#eerr-tbl thead tr:last-child th{
+/* Segunda fila de encabezado. Hoja EERR: siempre. Hoja Líneas: solo en la
+   vista Detalle (fila con clase th-sub); el Acumulado tiene una sola fila y
+   no debe heredar este offset (quedaria un hueco). */
+#eerr-tbl thead tr:last-child th,
+#lin-tbl thead tr.th-sub th{
   position:sticky;top:var(--th1);z-index:4;
   background:#2a4f6a;color:#d4e8f0;text-align:center;font-size:11px;font-weight:600}
 /* Acum cols */
@@ -194,6 +196,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 .lin-msg{padding:28px 14px;font-size:13px;color:var(--mut);line-height:1.6}
 .lin-msg.err{color:var(--neg)}
 .lin-msg small{display:block;font-size:12px;color:var(--mut)}
+/* Marca "†" de los conceptos cuya comparación por línea depende del reparto */
+.lin-rep{color:var(--neg);font-weight:700;cursor:help}
 .lin-nota{position:sticky;left:0;max-width:940px;padding:10px 14px 18px;
   font-size:11px;color:var(--mut);line-height:1.5;white-space:normal}
 
@@ -270,6 +274,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
             <button class="sel-btn" id="btn-lin-todos" onclick="linSelTodos()">Todos</button>
             <button class="sel-btn" id="btn-lin-limpiar" onclick="linSelLimpiar()">Limpiar</button>
           </div>
+        </div>
+        <!-- Solo en "Detalle por línea": las mismas columnas de variación que
+             la hoja EERR (comparten el estado con sus botones) -->
+        <div class="sel-grp" id="sel-var-lin" style="display:none">
+          <span class="sel-lbl">Variación</span>
+          <button class="sel-btn" id="btn-vard-lin" onclick="toggleVarD()">Var $</button>
+          <button class="sel-btn" id="btn-varpct-lin" onclick="toggleVarPct()">Var %</button>
         </div>
         <div class="sel-grp">
           <span class="sel-lbl">Escala</span>
@@ -396,7 +407,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
           <thead id="lin-thead"></thead>
           <tbody id="lin-tbody"></tbody>
         </table>
-        <p id="lin-nota" class="lin-nota" style="display:none"><span id="lin-nota-periodo"></span>Los centros 601–611, 206 y 104 se prorratean con porcentajes fijos. MMQ se muestra ponderado por el factor de participación (0,75 / 0,875). La depreciación de cada línea es la contable; no incluye la reasignación de D&amp;A de gestión del Excel.</p>
+        <p id="lin-nota" class="lin-nota" style="display:none"><span id="lin-nota-periodo"></span>Los centros 601–611, 206 y 104 se prorratean con porcentajes fijos. MMQ se muestra ponderado por el factor de participación (0,75 / 0,875). La depreciación de cada línea es la contable; no incluye la reasignación de D&amp;A de gestión del Excel.<span id="lin-nota-ppto" style="display:none"> Presupuesto: PPTO V2. † El Real prorratea los centros comunes con porcentajes fijos y el presupuesto reparte los costos compartidos con su propio criterio; en esas filas la variación por línea mezcla gestión y reparto (el Total consolidado no se ve afectado). El presupuesto de MMQ es el de la hoja P&amp;L MMQ, sin factor de participación. Las filas de centro de origen no tienen presupuesto. Consumibles Dental no tiene presupuesto.</span></p>
       </div>
     </div><!-- /#view-lineas -->
 

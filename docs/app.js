@@ -193,15 +193,21 @@ function clickEmpresa(e) {
   if (hojaA === 'ratios')   renderRatios();
 }
 
+// Las columnas de variación son las mismas para la hoja EERR y la vista
+// "Detalle por línea" de la hoja Líneas (como la escala MM$).
 function toggleVarD() {
   varD = !varD;
   document.getElementById('btn-vard').classList.toggle('active', varD);
+  document.getElementById('btn-vard-lin').classList.toggle('active', varD);
   renderTable();
+  if (LIN) renderLineas();
 }
 function toggleVarPct() {
   varPct = !varPct;
   document.getElementById('btn-varpct').classList.toggle('active', varPct);
+  document.getElementById('btn-varpct-lin').classList.toggle('active', varPct);
   renderTable();
+  if (LIN) renderLineas();
 }
 function toggleMM() {
   // La escala es una sola para la hoja EERR y la hoja Líneas.
@@ -250,7 +256,7 @@ function fmtVD(r, p, mm) {
 function fmtVP(r, p) {
   if (r == null || p == null || p === 0) return '-';
   const pct = (r - p) / Math.abs(p) * 100;
-  return (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%';
+  return (pct >= 0 ? '+' : '') + pct.toFixed(1).replace('.', ',') + '%';
 }
 function fmtMM(v) {
   if (v == null) return '';
@@ -383,35 +389,29 @@ function buildHead(meses, tp, ta) {
 // ═══════════════════════════════════════════════════════════════════
 //  TABLA EERR — VALORES POR CELDA
 // ═══════════════════════════════════════════════════════════════════
-function cellV(c, m, t, isPct) {
-  if (isPct) {
+// Texto de una celda de concepto según el tipo de columna ('Real', 'Ppto',
+// 'Var $', 'Var %' o 'Ppto Anual'). getR / getP / getPA: concepto -> valor
+// (Real, Ppto y Ppto anual del período de la columna). La usan la hoja EERR
+// (cellV, cellAcum) y la vista "Detalle por línea" de la hoja Líneas.
+//  - Filas de %: Real y Ppto cada uno sobre sus propios Ingresos; "-" en Var.
+//  - Var $ y Var % se calculan sobre los valores del período (en un
+//    acumulado, sobre los TOTALES, nunca promediando los % mensuales).
+function celdaTipo(c, t, getR, getP, getPA) {
+  if (FILAS_PCT.has(c)) {
     if (t === 'Var $' || t === 'Var %') return '-';
-    const nk = PCT_NR[c];
-    if (t === 'Real') return fmtPct(gR(m, nk), gR(m, 'Ingresos'));
-    return fmtPct(gP(m, nk), gP(m, 'Ingresos'));
+    const get = t === 'Real' ? getR : t === 'Ppto Anual' ? getPA : getP;
+    return fmtPct(get(PCT_NR[c]), get('Ingresos'));
   }
-  const r = gR(m, c), p = gP(m, c);
-  if (t === 'Real')  return fmt(r, enMM);
-  if (t === 'Ppto')  return fmt(p, enMM);
-  if (t === 'Var $') return fmtVD(r, p, enMM);
-  return fmtVP(r, p);
+  if (t === 'Ppto Anual') return fmt(getPA(c), enMM);
+  return vCell(getR(c), getP(c), t);
+}
+
+function cellV(c, m, t, isPct) {
+  return celdaTipo(c, t, k => gR(m, k), k => gP(m, k), aPAnual);
 }
 
 function cellAcum(c, t, isPct) {
-  if (isPct) {
-    if (t === 'Var $' || t === 'Var %') return '-';
-    const nk = PCT_NR[c];
-    if (t === 'Real')       return fmtPct(aR(nk), aR('Ingresos'));
-    if (t === 'Ppto Anual') return fmtPct(aPAnual(nk), aPAnual('Ingresos'));
-    return fmtPct(aP(nk), aP('Ingresos'));
-  }
-  if (t === 'Real')       return fmt(aR(c), enMM);
-  if (t === 'Ppto')       return fmt(aP(c), enMM);
-  if (t === 'Ppto Anual') return fmt(aPAnual(c), enMM);
-  // Var % acumulado: variacion relativa entre los TOTALES acumulados
-  // (no promedio de los % mensuales), mismo criterio que Var $.
-  if (t === 'Var %')      return fmtVP(aR(c), aP(c));
-  return fmtVD(aR(c), aP(c), enMM);
+  return celdaTipo(c, t, aR, aP, aPAnual);
 }
 
 function vCell(r, p, t) {
@@ -1011,22 +1011,28 @@ function linPintarPeriodo() {
   document.getElementById('lin-nota-periodo').textContent = !n ? ''
     : detalle
       ? `Línea: ${linea}. ` + (n === 1 ? `Período: ${txt}. `
-          : `Período: ${txt} (una columna por mes; «Total período» es la suma de los ${n} meses seleccionados). `)
+          : `Período: ${txt} (columnas por mes; «Total período» es la suma de los ${n} meses seleccionados). `)
     : n === 1 ? `Período: ${txt}. `
     : `Período: ${txt} (suma de los ${n} meses seleccionados). `;
+  // La nota del presupuesto solo va en el Detalle (la única vista con Ppto).
+  document.getElementById('lin-nota-ppto').style.display = linVista === 'detalle' ? '' : 'none';
 }
 
 // ── Vistas de la hoja ────────────────────────────────────────────
 // "Acumulado por línea": una columna por línea, cada una con la suma de los
-// meses seleccionados. "Detalle por línea": una sola línea (o el total
-// consolidado), una columna por mes seleccionado más "Total período".
+// meses seleccionados (solo Real). "Detalle por línea": una sola línea (o
+// el total consolidado), Real vs Presupuesto como en la hoja EERR: por cada
+// mes seleccionado Real | Ppto | [Var $] | [Var %], luego "Total período"
+// (si hay más de un mes) y "Ppto Anual".
 // Las dos usan el mismo selector de meses, la misma escala y los mismos
 // conceptos expandidos; cambiar de vista no toca nada de eso.
 function linSetVista(v) {
   linVista = v === 'detalle' ? 'detalle' : 'acum';
   document.querySelectorAll('#sel-vista-lin .sel-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.vista === linVista));
-  document.getElementById('sel-linea-grp').style.display = linVista === 'detalle' ? '' : 'none';
+  const detalle = linVista === 'detalle';
+  document.getElementById('sel-linea-grp').style.display = detalle ? '' : 'none';
+  document.getElementById('sel-var-lin').style.display   = detalle ? '' : 'none';
   linPintarPeriodo();
   if (LIN) renderLineas();
 }
@@ -1143,76 +1149,141 @@ function linCentros(mapas) {
 
 // ── Columnas de la tabla ─────────────────────────────────────────
 // Las dos vistas dibujan la misma tabla; solo cambia qué es cada columna:
-//   titulo   texto del encabezado
-//   total    true en la columna de total (Total / Total período)
-//   val      concepto -> valor de la columna (suma de sus meses)
-//   drill    concepto -> {centro: valor} de la columna
+//   grupo    texto de la fila superior del encabezado (mes o "Total
+//            período"); null si la columna ocupa las dos filas
+//   titulo   texto del encabezado (en las columnas con grupo, el tipo:
+//            Real / Ppto / Var $ / Var %)
+//   total    true en las columnas de total (Total, Total período, Ppto Anual)
+//   texto    concepto -> texto de la celda
+//   drill    concepto -> {centro: valor} de la columna, o null si la
+//            columna no tiene desglose por centro (queda en blanco)
 //   control  meses sobre los que la columna muestra la fila de control
 //            (Total líneas − Consolidado), o null si no aplica
+const MESES_ANIO = [1,2,3,4,5,6,7,8,9,10,11,12];
+
+// Texto de un concepto con el valor de get (los % se recalculan con los
+// totales de la columna).
+function linTexto(c, get) {
+  return FILAS_PCT.has(c) ? fmtPct(get(PCT_NR[c]), get('Ingresos')) : fmt(get(c), enMM);
+}
+
 function linColumnas() {
   const meses = linMesesSel();
   const todas = linLineas();
 
   if (linVista !== 'detalle') {
     // Acumulado por línea: una columna por línea + Total, todas con la
-    // suma de los meses seleccionados.
+    // suma de los meses seleccionados. Solo Real.
     return [
       ...todas.map(l => ({
-        titulo: l, total: false, control: null,
-        val:   c => linVal(l, c),
+        grupo: null, titulo: l, total: false, control: null,
+        texto: c => linTexto(c, k => linVal(l, k)),
         drill: c => linDrillCentros(c, [l], meses),
       })),
-      { titulo: 'Total', total: true, control: meses,
-        val:   linTot,
+      { grupo: null, titulo: 'Total', total: true, control: meses,
+        texto: c => linTexto(c, linTot),
         drill: c => linDrillCentros(c, todas, meses) },
     ];
   }
 
-  // Detalle por línea: una columna por mes + Total período (si hay más de
-  // un mes). "Total consolidado" es la suma de todas las líneas.
+  // Detalle por línea: Real vs Presupuesto con las mismas columnas que la
+  // hoja EERR (tipos(): Real, Ppto, [Var $], [Var %]) en cada mes y en
+  // "Total período" (si hay más de un mes), y al final "Ppto Anual".
+  // Real: lineas_real (o lineas_total_real). Ppto: lineas_ppto de la línea,
+  // o el presupuesto consolidado del panel para "Total consolidado". Una
+  // línea sin presupuesto (Consumibles Dental) muestra "-".
   const linea   = linLineaSel();
   const esTotal = linea === LIN_TOTAL;
-  const bloque  = esTotal ? LIN.lineas_total_real : LIN.lineas_real[linea];
+  const bloqueR = esTotal ? LIN.lineas_total_real : LIN.lineas_real[linea];
+  const bloqueP = esTotal ? DATA.ppto['Consolidado'] : (LIN.lineas_ppto?.[linea] ?? null);
   const lineas  = esTotal ? todas : [linea];
-  const columna = (titulo, ms, total) => ({
-    titulo, total, control: esTotal ? ms : null,
-    val:   c => linSuma(bloque, c, ms),
-    drill: c => linDrillCentros(c, lineas, ms),
+  const getPA   = k => linSuma(bloqueP, k, MESES_ANIO);
+
+  const grupo = (titulo, ms, total) => tipos().map(t => {
+    const getR = k => linSuma(bloqueR, k, ms);
+    const getP = k => linSuma(bloqueP, k, ms);
+    return {
+      grupo: titulo, titulo: t, total,
+      control: esTotal && t === 'Real' ? ms : null,
+      texto: c => celdaTipo(c, t, getR, getP, getPA),
+      // El presupuesto no tiene centro de origen: solo Real se desglosa.
+      drill: t === 'Real' ? (c => linDrillCentros(c, lineas, ms)) : null,
+    };
   });
-  const cols = meses.map(m => columna(ABR[m], [m], false));
-  if (meses.length > 1) cols.push(columna('Total período', meses, true));
+
+  const cols = meses.flatMap(m => grupo(ABR[m], [m], false));
+  if (meses.length > 1) cols.push(...grupo('Total período', meses, true));
+  cols.push({
+    grupo: null, titulo: 'Ppto Anual', total: true, control: null,
+    texto: c => celdaTipo(c, 'Ppto Anual', null, null, getPA),
+    drill: null,
+  });
   return cols;
 }
 
-// ── Cabecera: una sola fila ──────────────────────────────────────
+// ── Cabecera ─────────────────────────────────────────────────────
+// Acumulado: una sola fila. Detalle: dos filas como la hoja EERR (arriba el
+// mes, abajo el tipo de columna); "Ppto Anual" ocupa las dos filas.
 // (los porcentajes del prorrateo siguen en LIN.lineas_prorrateo, pero
 // no se muestran en la hoja)
 function linBuildHead(cols) {
-  let h = `<tr><th class="th-conc sticky-l">Concepto</th>`;
-  cols.forEach(col => { h += `<th${col.total ? ' class="th-acum"' : ''}>${esc(col.titulo)}</th>`; });
-  document.getElementById('lin-thead').innerHTML = h + '</tr>';
+  const dosFilas = cols.some(col => col.grupo);
+  const rs = dosFilas ? ' rowspan="2"' : '';
+  let h1 = `<tr><th class="th-conc sticky-l"${rs}>Concepto</th>`;
+  let h2 = '<tr class="th-sub">';
+  for (let i = 0; i < cols.length; i++) {
+    const col = cols[i];
+    if (!col.grupo) {
+      h1 += `<th${rs}${col.total ? ' class="th-acum"' : ''}>${esc(col.titulo)}</th>`;
+      continue;
+    }
+    let n = 1;
+    while (i + n < cols.length && cols[i + n].grupo === col.grupo) n++;
+    h1 += `<th class="${col.total ? 'th-acum' : 'th-mes'}" colspan="${n}">${esc(col.grupo)}</th>`;
+    cols.slice(i, i + n).forEach(c2 => {
+      h2 += `<th${c2.total ? ' class="th-acum-c"' : ''}>${esc(c2.titulo)}</th>`;
+    });
+    i += n - 1;
+  }
+  document.getElementById('lin-thead').innerHTML = h1 + '</tr>' + (dosFilas ? h2 + '</tr>' : '');
 }
 
 // ── Filas ────────────────────────────────────────────────────────
-function linMainRow(c, nv, tip, cols, hasDrill, isExp) {
-  const isPct = FILAS_PCT.has(c);
+// Conceptos cuya comparación Real vs Ppto POR LÍNEA depende del criterio de
+// reparto de los costos compartidos (distinto en el Real y en el
+// presupuesto). En el Detalle de una línea llevan "†"; en el Total
+// consolidado no (el reparto no cambia el total). Incluye los subtotales y
+// porcentajes que contienen alguno de ellos.
+const MARCA_REPARTO = new Set([
+  'GPBE Indirectos', 'GPBE Total', 'OGPN Indirectos', 'OGPN Total',
+  'Subtotal GAV', 'EBITDA Directo', '% EBITDA',
+  'Finiquitos', 'Provisión Habilitación Oficinas', 'Gastos Adicionales',
+  'EBITDA Empresa', '% EBITDA Empresa', 'Depreciación', 'Resultado Operacional',
+  'Costo Financiero', 'Diferencia de Cambio', 'Resultado No Operacional',
+  'Resultado antes Impuestos', 'Impuesto a la Renta', 'Resultado del Ejercicio',
+]);
+const MARCA_REPARTO_TXT =
+  'Comparación por línea afectada por distinto criterio de reparto entre Real y Presupuesto';
+
+function linMainRow(c, nv, tip, cols, hasDrill, isExp, conMarca) {
   const rcls  = tip === 'subtotal'   ? 'row-sub'
               : tip === 'porcentaje' ? 'row-pct' : 'row-norm';
   const icls  = nv === 1 ? 'conc-n1' : 'conc-n0';
   const ddb   = hasDrill
     ? `<button class="dd-btn" data-c="${esc(c)}">${isExp ? '−' : '+'}</button>`
     : '<span class="dd-sp"></span>';
-  // Los porcentajes se recalculan con los totales de cada columna.
-  const celda = get => isPct ? fmtPct(get(PCT_NR[c]), get('Ingresos')) : fmt(get(c), enMM);
+  const marca = conMarca && MARCA_REPARTO.has(c)
+    ? ` <span class="lin-rep" title="${esc(MARCA_REPARTO_TXT)}">†</span>` : '';
   let row = `<tr class="${rcls}" data-c="${esc(c)}">`;
-  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(nombreLargo(c))}</td>`;
+  row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(nombreLargo(c))}${marca}</td>`;
   cols.forEach(col => {
-    row += `<td class="td-v${col.total ? ' td-acum' : ''}">${celda(col.val)}</td>`;
+    row += `<td class="td-v${col.total ? ' td-acum' : ''}">${col.texto(c)}</td>`;
   });
   return row + '</tr>';
 }
 
-// Fila de un centro de origen. mapas[i] = {centro: valor} de la columna i.
+// Fila de un centro de origen. mapas[i] = {centro: valor} de la columna i,
+// o null si la columna no tiene desglose (Ppto, Var, Ppto Anual: en blanco).
 // En las columnas de total un centro sin valor es 0; en las demás, "-".
 function linCentroRow(c, k, cols, mapas, prorrateados) {
   const etiqueta = LIN.lineas_centros?.[k] ?? k;
@@ -1220,8 +1291,8 @@ function linCentroRow(c, k, cols, mapas, prorrateados) {
   let row = `<tr class="row-emp" data-drill="${esc(c)}">`;
   row += `<td class="td-c sticky-l conc-emp"><span class="dd-sp"></span><em>${esc(etiqueta)}</em>${sufijo}</td>`;
   cols.forEach((col, i) => {
-    const v = mapas[i][k] ?? (col.total ? 0 : null);
-    row += `<td class="td-v${col.total ? ' td-acum' : ''}">${fmt(v, enMM)}</td>`;
+    const txt = !mapas[i] ? '' : fmt(mapas[i][k] ?? (col.total ? 0 : null), enMM);
+    row += `<td class="td-v${col.total ? ' td-acum' : ''}">${txt}</td>`;
   });
   return row + '</tr>';
 }
@@ -1278,16 +1349,18 @@ function linRebuildBody(cols) {
   const cont = document.getElementById('lin-cont');
   const sl = cont.scrollLeft, st = cont.scrollTop;
   const prorrateados = new Set(LIN.lineas_centros_prorrateados || []);
+  const conMarca = linVista === 'detalle' && linLineaSel() !== LIN_TOTAL;
   let html = '';
 
   for (const [c, nv, tip] of DATA.estructura_eerr) {
     const hasDrill = !FILAS_PCT.has(c) && !!LIN.lineas_drill_real[c];
     const isExp    = hasDrill && exLin.has(c);
-    html += linMainRow(c, nv, tip, cols, hasDrill, isExp);
+    html += linMainRow(c, nv, tip, cols, hasDrill, isExp, conMarca);
     if (isExp) {
-      const mapas = cols.map(col => col.drill(c));
-      // Filas: los centros con valor en alguna columna que no sea de total.
-      linCentros(mapas.filter((_, i) => !cols[i].total))
+      const mapas = cols.map(col => col.drill ? col.drill(c) : null);
+      // Filas: los centros con valor en alguna columna con desglose que no
+      // sea de total.
+      linCentros(mapas.filter((m, i) => m && !cols[i].total))
         .forEach(k => { html += linCentroRow(c, k, cols, mapas, prorrateados); });
     }
   }

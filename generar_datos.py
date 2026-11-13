@@ -23,6 +23,7 @@ Reutiliza EXACTAMENTE la misma logica ya validada en:
   - calculo/eerr.py
   - calculo/eerr_presupuesto.py
   - calculo/curvas_j.py        (Curvas J: Real vs Presupuesto por linea)
+  - calculo/ppto_lineas.py     (Presupuesto por concepto y linea, hoja Lineas)
 No reimplementa ninguna regla de negocio - solo orquesta y serializa.
 """
 
@@ -43,6 +44,9 @@ from calculo.eerr import calcular_eerr
 from calculo.eerr_presupuesto import calcular_eerr_ppto
 from calculo.curvas_j import (
     leer_presupuesto, construir_curvas_j, controlar_curvas_j, CONCEPTO_REAL,
+)
+from calculo.ppto_lineas import (
+    presupuesto_exacto, leer_hojas as leer_hojas_ppto, controlar_lineas_ppto,
 )
 
 # ──────────────────────────────────────────────────────────────────────
@@ -782,6 +786,42 @@ def generar_curvas_j(archivo_ppto, lineas_real, grid_real, grid_ppto,
 
 
 # ──────────────────────────────────────────────────────────────────────
+# BLOQUE 6: PRESUPUESTO POR LINEA (hoja "Lineas", vista Detalle por linea)
+# ──────────────────────────────────────────────────────────────────────
+#
+# Bloque "lineas_ppto" de docs/datos_lineas.json:
+#   linea -> "1".."12" -> {concepto: valor}   (pesos enteros, 29 conceptos)
+# Las 8 lineas con presupuesto (Consumibles Dental no tiene). El total no va
+# aqui: el panel usa ppto.Consolidado de datos_eerr.json. Las lineas se
+# redondean "cuadrando" (_cuadrar) para que sumen EXACTAMENTE ese total.
+
+def generar_lineas_ppto(full_ppto, archivo_ppto, grid_ppto, curvas_j):
+    """Retorna (lineas_ppto, controles). Lanza ValueError (y no se escribe
+    ningun JSON) si falla alguno de los controles de calculo/ppto_lineas.py."""
+    claves = {c: KEY_PPTO[c] for c in CONCEPTOS_VALOR}
+    exactos = presupuesto_exacto(full_ppto, claves)
+    lineas = list(exactos)
+    resultado = {l: {} for l in lineas}
+    for mes in MESES_NUM:
+        m = str(mes)
+        fila = {l: {} for l in lineas}
+        for concepto in CONCEPTOS_VALOR:
+            cuadrado = _cuadrar(
+                {l: exactos[l][m][concepto] for l in lineas},
+                grid_ppto["Consolidado"][m][concepto],
+                f"Presupuesto {concepto}, mes {mes} (lineas vs consolidado)",
+            )
+            for l in lineas:
+                fila[l][concepto] = cuadrado[l]
+        for l in lineas:
+            resultado[l][m] = fila[l]
+    controles = controlar_lineas_ppto(
+        resultado, grid_ppto["Consolidado"], curvas_j, leer_hojas_ppto(archivo_ppto),
+    )
+    return resultado, controles
+
+
+# ──────────────────────────────────────────────────────────────────────
 # MAIN
 # ──────────────────────────────────────────────────────────────────────
 
@@ -842,6 +882,18 @@ def main():
     print(f"    Real 8 lineas + excluidas vs consolidado     : "
           f"{controles_cj['real_vs_consolidado']:,.0f}")
 
+    print("Generando presupuesto por linea (hoja Lineas, vista Detalle)...")
+    lineas_ppto, controles_lp = generar_lineas_ppto(
+        full_ppto, ARCHIVO_PPTO, grid_ppto, curvas_j
+    )
+    print("  Controles (diferencia maxima observada, en pesos):")
+    print(f"    Suma 8 lineas vs ppto consolidado (exacto)   : "
+          f"{controles_lp['suma_vs_consolidado']:,.0f}")
+    print(f"    Resultado del Ejercicio vs curvas J          : "
+          f"{controles_lp['resultado_vs_curvas']:,.0f}")
+    print(f"    Cada linea vs sus hojas del PPTO V2          : "
+          f"{controles_lp['lineas_vs_hojas']:,.2f}")
+
     salida = {
         "meta": {
             "meses_con_real": meses_con_real,
@@ -868,6 +920,7 @@ def main():
         "lineas_prorrateo": lineas_prorrateo,
         "lineas_centros_prorrateados": lineas_centros_prorrateados,
         "curvas_j": curvas_j,
+        "lineas_ppto": lineas_ppto,
     }
 
     Path(SALIDA_JSON).parent.mkdir(parents=True, exist_ok=True)
