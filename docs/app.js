@@ -66,6 +66,9 @@ let LIN        = null;       // datos_lineas.json: se descarga la primera vez qu
 let linCarga   = null;       // descarga en curso (Promise)
 let linMeses   = new Set();  // meses a sumar (solo meses con Real); al iniciar, todos
 let exLin      = new Set();  // conceptos expandidos (drill por centro de origen)
+let linVista   = 'acum';     // 'acum' (una columna por línea) | 'detalle' (una línea, mes a mes)
+let linLinea   = null;       // línea elegida en el Detalle; null = la primera. LIN_TOTAL = consolidado
+const LIN_TOTAL = '__total__';
 
 // Estado hoja Curvas J (usa el mismo datos_lineas.json, bloque curvas_j)
 let cjCharts   = [];         // instancias Chart.js, una por línea
@@ -997,12 +1000,65 @@ function linPeriodoTxt() {
 }
 
 // Texto del período activo: sobre la tabla y al inicio de la nota al pie.
+// En la vista Detalle se agrega la línea elegida.
 function linPintarPeriodo() {
   const n = linMesesSel().length, txt = linPeriodoTxt();
+  const detalle = linVista === 'detalle' && !!LIN;
+  const linea   = detalle ? linLineaNombre() : '';
   document.getElementById('lin-periodo-txt').textContent = n ? txt : 'ningún mes seleccionado';
+  document.getElementById('lin-periodo-linea').style.display = detalle ? '' : 'none';
+  document.getElementById('lin-periodo-linea-txt').textContent = linea;
   document.getElementById('lin-nota-periodo').textContent = !n ? ''
+    : detalle
+      ? `Línea: ${linea}. ` + (n === 1 ? `Período: ${txt}. `
+          : `Período: ${txt} (una columna por mes; «Total período» es la suma de los ${n} meses seleccionados). `)
     : n === 1 ? `Período: ${txt}. `
     : `Período: ${txt} (suma de los ${n} meses seleccionados). `;
+}
+
+// ── Vistas de la hoja ────────────────────────────────────────────
+// "Acumulado por línea": una columna por línea, cada una con la suma de los
+// meses seleccionados. "Detalle por línea": una sola línea (o el total
+// consolidado), una columna por mes seleccionado más "Total período".
+// Las dos usan el mismo selector de meses, la misma escala y los mismos
+// conceptos expandidos; cambiar de vista no toca nada de eso.
+function linSetVista(v) {
+  linVista = v === 'detalle' ? 'detalle' : 'acum';
+  document.querySelectorAll('#sel-vista-lin .sel-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.vista === linVista));
+  document.getElementById('sel-linea-grp').style.display = linVista === 'detalle' ? '' : 'none';
+  linPintarPeriodo();
+  if (LIN) renderLineas();
+}
+
+function linSetLinea(v) {
+  linLinea = v;
+  linPintarPeriodo();
+  if (LIN) renderLineas();
+}
+
+// Línea del Detalle: la elegida o, si aún no se eligió ninguna, la primera.
+function linLineaSel() {
+  const lineas = linLineas();
+  return linLinea === LIN_TOTAL || lineas.includes(linLinea) ? linLinea : lineas[0];
+}
+function linLineaNombre() {
+  const l = linLineaSel();
+  return l === LIN_TOTAL ? 'Total consolidado' : l;
+}
+
+// Desplegable de línea (se llena una vez, cuando ya están los datos).
+function linBuildLineaSel() {
+  const sel = document.getElementById('sel-linea-lin');
+  if (!sel.options.length) {
+    [...linLineas().map(l => [l, l]), [LIN_TOTAL, 'Total consolidado']].forEach(([valor, texto]) => {
+      const o = document.createElement('option');
+      o.value = valor;
+      o.textContent = texto;
+      sel.appendChild(o);
+    });
+  }
+  sel.value = linLineaSel();
 }
 
 // ── Descarga de datos (solo la primera vez) ──────────────────────
@@ -1046,11 +1102,12 @@ function abrirLineas() {
 
 // ── Acceso a datos ───────────────────────────────────────────────
 function linLineas()   { return Object.keys(LIN.lineas_real); }
-// Suma de un concepto en los meses seleccionados, dentro de un bloque
-// {mes: {concepto: valor}}. null si ningún mes trae el dato.
-function linSuma(porMes, c) {
+// Suma de un concepto en un conjunto de meses (por defecto, los
+// seleccionados), dentro de un bloque {mes: {concepto: valor}}.
+// null si ningún mes trae el dato.
+function linSuma(porMes, c, meses = linMesesSel()) {
   let total = 0, any = false;
-  for (const m of linMesesSel()) {
+  for (const m of meses) {
     const v = porMes?.[m + '']?.[c];
     if (v != null) { total += v; any = true; }
   }
@@ -1058,32 +1115,25 @@ function linSuma(porMes, c) {
 }
 function linVal(l, c)  { return linSuma(LIN.lineas_real[l], c); }
 function linTot(c)     { return linSuma(LIN.lineas_total_real, c); }
-// Consolidado del panel para los mismos meses (para la fila de control).
-function linCons(c)    { return linSuma(DATA.real['Consolidado'], c); }
 
-// Drill de un concepto en los meses seleccionados: {línea: {centro: suma}}.
-// Igual que en el JSON, se omiten los centros cuya suma es 0.
-function linDrillSuma(c, lineas) {
-  const out = {};
-  const meses = linMesesSel();
-  lineas.forEach(l => {
-    const acum = {};
-    meses.forEach(m => {
-      const porCentro = LIN.lineas_drill_real[c]?.[l]?.[m + ''] || {};
-      Object.entries(porCentro).forEach(([k, v]) => { acum[k] = (acum[k] || 0) + v; });
-    });
-    Object.keys(acum).forEach(k => { if (acum[k] === 0) delete acum[k]; });
-    out[l] = acum;
-  });
-  return out;
+// Drill de un concepto: {centro: suma} sobre un conjunto de líneas y de
+// meses. Igual que en el JSON, se omiten los centros cuya suma es 0.
+function linDrillCentros(c, lineas, meses) {
+  const acum = {};
+  lineas.forEach(l => meses.forEach(m => {
+    const porCentro = LIN.lineas_drill_real[c]?.[l]?.[m + ''] || {};
+    Object.entries(porCentro).forEach(([k, v]) => { acum[k] = (acum[k] || 0) + v; });
+  }));
+  Object.keys(acum).forEach(k => { if (acum[k] === 0) delete acum[k]; });
+  return acum;
 }
 
-// Centros de origen que aportan a un concepto en el período: primero los
+// Centros de origen que aportan en alguna de las columnas: primero los
 // diarios propios (Incardia / MMQ / Tecservice), luego los centros de
 // costo por código.
-function linCentros(drill, lineas) {
+function linCentros(mapas) {
   const claves = new Set();
-  lineas.forEach(l => Object.keys(drill[l]).forEach(k => claves.add(k)));
+  mapas.forEach(mapa => Object.keys(mapa).forEach(k => claves.add(k)));
   const esCod = k => /^\d+$/.test(k);
   return [...claves].sort((a, b) => {
     if (esCod(a) !== esCod(b)) return esCod(a) ? 1 : -1;
@@ -1091,18 +1141,60 @@ function linCentros(drill, lineas) {
   });
 }
 
-// ── Cabecera: una sola fila, líneas + Total ──────────────────────
+// ── Columnas de la tabla ─────────────────────────────────────────
+// Las dos vistas dibujan la misma tabla; solo cambia qué es cada columna:
+//   titulo   texto del encabezado
+//   total    true en la columna de total (Total / Total período)
+//   val      concepto -> valor de la columna (suma de sus meses)
+//   drill    concepto -> {centro: valor} de la columna
+//   control  meses sobre los que la columna muestra la fila de control
+//            (Total líneas − Consolidado), o null si no aplica
+function linColumnas() {
+  const meses = linMesesSel();
+  const todas = linLineas();
+
+  if (linVista !== 'detalle') {
+    // Acumulado por línea: una columna por línea + Total, todas con la
+    // suma de los meses seleccionados.
+    return [
+      ...todas.map(l => ({
+        titulo: l, total: false, control: null,
+        val:   c => linVal(l, c),
+        drill: c => linDrillCentros(c, [l], meses),
+      })),
+      { titulo: 'Total', total: true, control: meses,
+        val:   linTot,
+        drill: c => linDrillCentros(c, todas, meses) },
+    ];
+  }
+
+  // Detalle por línea: una columna por mes + Total período (si hay más de
+  // un mes). "Total consolidado" es la suma de todas las líneas.
+  const linea   = linLineaSel();
+  const esTotal = linea === LIN_TOTAL;
+  const bloque  = esTotal ? LIN.lineas_total_real : LIN.lineas_real[linea];
+  const lineas  = esTotal ? todas : [linea];
+  const columna = (titulo, ms, total) => ({
+    titulo, total, control: esTotal ? ms : null,
+    val:   c => linSuma(bloque, c, ms),
+    drill: c => linDrillCentros(c, lineas, ms),
+  });
+  const cols = meses.map(m => columna(ABR[m], [m], false));
+  if (meses.length > 1) cols.push(columna('Total período', meses, true));
+  return cols;
+}
+
+// ── Cabecera: una sola fila ──────────────────────────────────────
 // (los porcentajes del prorrateo siguen en LIN.lineas_prorrateo, pero
 // no se muestran en la hoja)
-function linBuildHead(lineas) {
+function linBuildHead(cols) {
   let h = `<tr><th class="th-conc sticky-l">Concepto</th>`;
-  lineas.forEach(l => { h += `<th>${esc(l)}</th>`; });
-  h += `<th class="th-acum">Total</th></tr>`;
-  document.getElementById('lin-thead').innerHTML = h;
+  cols.forEach(col => { h += `<th${col.total ? ' class="th-acum"' : ''}>${esc(col.titulo)}</th>`; });
+  document.getElementById('lin-thead').innerHTML = h + '</tr>';
 }
 
 // ── Filas ────────────────────────────────────────────────────────
-function linMainRow(c, nv, tip, lineas, hasDrill, isExp) {
+function linMainRow(c, nv, tip, cols, hasDrill, isExp) {
   const isPct = FILAS_PCT.has(c);
   const rcls  = tip === 'subtotal'   ? 'row-sub'
               : tip === 'porcentaje' ? 'row-pct' : 'row-norm';
@@ -1114,49 +1206,60 @@ function linMainRow(c, nv, tip, lineas, hasDrill, isExp) {
   const celda = get => isPct ? fmtPct(get(PCT_NR[c]), get('Ingresos')) : fmt(get(c), enMM);
   let row = `<tr class="${rcls}" data-c="${esc(c)}">`;
   row += `<td class="td-c sticky-l ${icls}">${ddb}${esc(nombreLargo(c))}</td>`;
-  lineas.forEach(l => { row += `<td class="td-v">${celda(k => linVal(l, k))}</td>`; });
-  row += `<td class="td-v td-acum">${celda(linTot)}</td>`;
+  cols.forEach(col => {
+    row += `<td class="td-v${col.total ? ' td-acum' : ''}">${celda(col.val)}</td>`;
+  });
   return row + '</tr>';
 }
 
-function linCentroRow(c, k, lineas, drill, prorrateados) {
+// Fila de un centro de origen. mapas[i] = {centro: valor} de la columna i.
+// En las columnas de total un centro sin valor es 0; en las demás, "-".
+function linCentroRow(c, k, cols, mapas, prorrateados) {
   const etiqueta = LIN.lineas_centros?.[k] ?? k;
   const sufijo   = prorrateados.has(k) ? ' (prorrateo)' : '';
-  let total = 0;
   let row = `<tr class="row-emp" data-drill="${esc(c)}">`;
   row += `<td class="td-c sticky-l conc-emp"><span class="dd-sp"></span><em>${esc(etiqueta)}</em>${sufijo}</td>`;
-  lineas.forEach(l => {
-    const v = drill[l][k] ?? null;
-    if (v != null) total += v;
-    row += `<td class="td-v">${fmt(v, enMM)}</td>`;
+  cols.forEach((col, i) => {
+    const v = mapas[i][k] ?? (col.total ? 0 : null);
+    row += `<td class="td-v${col.total ? ' td-acum' : ''}">${fmt(v, enMM)}</td>`;
   });
-  row += `<td class="td-v td-acum">${fmt(total, enMM)}</td>`;
   return row + '</tr>';
 }
 
-// Fila de control: Total líneas − Consolidado, con los mismos meses
-// seleccionados y revisado en TODOS los conceptos. Muestra la mayor
-// diferencia (siempre en pesos); debe ser 0.
-// Si algún concepto difiere en más de 1 peso se marca en rojo y se nombra.
-function linControlRow(lineas) {
-  const difs = DATA.estructura_eerr
+// Fila de control: Total líneas − Consolidado, revisado en TODOS los
+// conceptos. Cada columna con control muestra la mayor diferencia de sus
+// meses (siempre en pesos); debe ser 0. Si algún concepto difiere en más
+// de 1 peso se marca en rojo, y los del período completo se nombran.
+// En el Detalle de una sola línea no hay nada que controlar: no se dibuja.
+function linControlRow(cols) {
+  if (!cols.some(col => col.control)) return '';
+  const difsDe = meses => DATA.estructura_eerr
     .filter(([c]) => !FILAS_PCT.has(c))
-    .map(([c]) => [c, (linTot(c) ?? 0) - (linCons(c) ?? 0)]);
-  const peor  = difs.reduce((a, b) => Math.abs(b[1]) > Math.abs(a[1]) ? b : a, ['', 0])[1];
-  const malos = difs.filter(([, d]) => Math.abs(d) > 1);
-  const cls   = malos.length ? ' rt-var-bad' : '';
+    .map(([c]) => [c, (linSuma(LIN.lineas_total_real, c, meses) ?? 0)
+                      - (linSuma(DATA.real['Consolidado'], c, meses) ?? 0)]);
+  const peorDe  = difs => difs.reduce((a, b) => Math.abs(b[1]) > Math.abs(a[1]) ? b : a, ['', 0])[1];
+  const malosDe = difs => difs.filter(([, d]) => Math.abs(d) > 1);
+
+  // El detalle "No cuadra" es el de la última columna con control: el Total.
+  const malos = malosDe(difsDe([...cols].reverse().find(col => col.control).control));
   const det   = malos.length
     ? `<br><span class="rt-var-bad">No cuadra: ${malos.map(([c, d]) => `${esc(c)} ${fmt(d, false)}`).join('; ')}</span>`
     : '';
   let row = `<tr class="row-sub" id="lin-control">`;
   row += `<td class="td-c sticky-l conc-n0"><span class="dd-sp"></span>Total líneas − Consolidado (mayor diferencia, en pesos)${det}</td>`;
-  lineas.forEach(() => { row += '<td class="td-v"></td>'; });
-  row += `<td class="td-v td-acum${cls}">${fmt(peor, false)}</td>`;
+  cols.forEach(col => {
+    const acum = col.total ? ' td-acum' : '';
+    if (!col.control) { row += `<td class="td-v${acum}"></td>`; return; }
+    const difs = difsDe(col.control);
+    const cls  = malosDe(difs).length ? ' rt-var-bad' : '';
+    row += `<td class="td-v${acum}${cls}">${fmt(peorDe(difs), false)}</td>`;
+  });
   return row + '</tr>';
 }
 
 // ── Render ───────────────────────────────────────────────────────
 function renderLineas() {
+  linBuildLineaSel();
   linPintarPeriodo();
   if (!linMesesSel().length) {
     linMensaje('Selecciona al menos un mes.', false);
@@ -1165,13 +1268,13 @@ function renderLineas() {
   document.getElementById('lin-msg').style.display  = 'none';
   document.getElementById('lin-tbl').style.display  = '';
   document.getElementById('lin-nota').style.display = '';
-  const lineas = linLineas();
-  linBuildHead(lineas);
-  linRebuildBody(lineas);
+  const cols = linColumnas();
+  linBuildHead(cols);
+  linRebuildBody(cols);
 }
 
-function linRebuildBody(lineas) {
-  if (!lineas) lineas = linLineas();
+function linRebuildBody(cols) {
+  if (!cols) cols = linColumnas();
   const cont = document.getElementById('lin-cont');
   const sl = cont.scrollLeft, st = cont.scrollTop;
   const prorrateados = new Set(LIN.lineas_centros_prorrateados || []);
@@ -1180,13 +1283,15 @@ function linRebuildBody(lineas) {
   for (const [c, nv, tip] of DATA.estructura_eerr) {
     const hasDrill = !FILAS_PCT.has(c) && !!LIN.lineas_drill_real[c];
     const isExp    = hasDrill && exLin.has(c);
-    html += linMainRow(c, nv, tip, lineas, hasDrill, isExp);
+    html += linMainRow(c, nv, tip, cols, hasDrill, isExp);
     if (isExp) {
-      const drill = linDrillSuma(c, lineas);
-      linCentros(drill, lineas).forEach(k => { html += linCentroRow(c, k, lineas, drill, prorrateados); });
+      const mapas = cols.map(col => col.drill(c));
+      // Filas: los centros con valor en alguna columna que no sea de total.
+      linCentros(mapas.filter((_, i) => !cols[i].total))
+        .forEach(k => { html += linCentroRow(c, k, cols, mapas, prorrateados); });
     }
   }
-  html += linControlRow(lineas);
+  html += linControlRow(cols);
 
   document.getElementById('lin-tbody').innerHTML = html;
   cont.scrollLeft = sl;

@@ -43,6 +43,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 .sel-lbl{font-size:10px;font-weight:700;color:var(--mut);text-transform:uppercase;
   letter-spacing:.06em;white-space:nowrap}
 .btn-grp{display:flex;gap:3px;flex-wrap:wrap}
+/* Controles de la hoja Líneas: varios grupos (vista, línea, meses, escala)
+   que bajan de fila completos cuando no caben. */
+#sel-lineas-ctrl{flex-wrap:wrap;gap:6px 14px}
+#sel-linea-lin{max-width:100%}
 .sel-btn{background:var(--wh);border:1px solid var(--brd);color:var(--mut);font-size:11px;
   font-weight:600;padding:4px 9px;border-radius:20px;cursor:pointer;transition:.12s;
   font-family:inherit;white-space:nowrap}
@@ -244,17 +248,33 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
         <span class="sel-lbl">Empresa</span>
         <div class="btn-grp" id="sel-empresa"></div>
       </div>
-      <!-- Hoja Líneas: meses a sumar (selección múltiple, solo meses con Real);
-           la selección es la misma para todas las columnas -->
+      <!-- Hoja Líneas: vista (acumulado por línea / detalle de una línea mes a
+           mes) y meses (selección múltiple, solo meses con Real). Los meses,
+           la escala y la línea elegida valen para las dos vistas. -->
       <div class="sel-grp" id="sel-lineas-ctrl" style="display:none">
-        <span class="sel-lbl">Mes</span>
-        <div class="btn-grp" id="sel-meses-lin"></div>
-        <div class="btn-grp">
-          <button class="sel-btn" id="btn-lin-todos" onclick="linSelTodos()">Todos</button>
-          <button class="sel-btn" id="btn-lin-limpiar" onclick="linSelLimpiar()">Limpiar</button>
+        <div class="sel-grp">
+          <span class="sel-lbl">Vista</span>
+          <div class="btn-grp" id="sel-vista-lin">
+            <button class="sel-btn active" data-vista="acum" onclick="linSetVista('acum')">Acumulado por línea</button>
+            <button class="sel-btn" data-vista="detalle" onclick="linSetVista('detalle')">Detalle por línea</button>
+          </div>
         </div>
-        <span class="sel-lbl">Escala</span>
-        <button class="sel-btn" id="btn-mm-lin" onclick="toggleMM()">MM$</button>
+        <div class="sel-grp" id="sel-linea-grp" style="display:none">
+          <label class="sel-lbl" for="sel-linea-lin">Línea</label>
+          <select class="sl" id="sel-linea-lin" onchange="linSetLinea(this.value)"></select>
+        </div>
+        <div class="sel-grp">
+          <span class="sel-lbl">Mes</span>
+          <div class="btn-grp" id="sel-meses-lin"></div>
+          <div class="btn-grp">
+            <button class="sel-btn" id="btn-lin-todos" onclick="linSelTodos()">Todos</button>
+            <button class="sel-btn" id="btn-lin-limpiar" onclick="linSelLimpiar()">Limpiar</button>
+          </div>
+        </div>
+        <div class="sel-grp">
+          <span class="sel-lbl">Escala</span>
+          <button class="sel-btn" id="btn-mm-lin" onclick="toggleMM()">MM$</button>
+        </div>
       </div>
       <div class="sel-grp" id="sel-eerr-ctrl">
         <span class="sel-lbl">Variación</span>
@@ -369,7 +389,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gy);color:var(
 
     <!-- LINEAS VIEW (EERR por Línea de Negocio; datos en datos_lineas.json) -->
     <div id="view-lineas" style="display:none">
-      <div id="lin-periodo"><span class="sel-lbl">Período</span> <span id="lin-periodo-txt"></span></div>
+      <div id="lin-periodo"><span class="sel-lbl">Período</span> <span id="lin-periodo-txt"></span><span id="lin-periodo-linea" style="display:none"> · <span class="sel-lbl">Línea</span> <span id="lin-periodo-linea-txt"></span></span></div>
       <div id="lin-cont">
         <div id="lin-msg" class="lin-msg"></div>
         <table id="lin-tbl" style="display:none">
